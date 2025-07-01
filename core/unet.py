@@ -151,6 +151,42 @@ class DownBlock(nn.Module):
         return x, xs
 
 
+class MidBlock(nn.Module):
+    def __init__(
+        self,
+        in_channels: int,
+        num_layers: int = 1,
+        attention: bool = True,
+        attention_heads: int = 16,
+        skip_scale: float = 1,
+    ):
+        super().__init__()
+
+        nets = []
+        attns = []
+        # first layer
+        nets.append(ResnetBlock(in_channels, in_channels, skip_scale=skip_scale))
+        # more layers
+        for i in range(num_layers):
+            nets.append(ResnetBlock(in_channels, in_channels, skip_scale=skip_scale))
+            if attention:
+                attns.append(MVAttention(in_channels, attention_heads, skip_scale=skip_scale))
+            else:
+                attns.append(None)
+        self.nets = nn.ModuleList(nets)
+        self.attns = nn.ModuleList(attns)
+        
+    def forward(self, x):
+        x = self.nets[0](x)
+        for attn, net in zip(self.attns, self.nets[1:]):
+            if attn:
+                x = attn(x)
+            x = net(x)
+        return x
+    
+
+
+
 if __name__ == "__main__":
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     print(device)
