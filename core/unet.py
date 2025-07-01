@@ -106,6 +106,51 @@ class ResnetBlock(nn.Module):
         return x
 
 
+class DownBlock(nn.Module):
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        num_layers: int = 1,
+        downsample: bool = True,
+        attention: bool = True,
+        attention_heads: int = 16,
+        skip_scale: float = 1,
+    ):
+        super().__init__()
+ 
+        nets = []
+        attns = []
+        for i in range(num_layers):
+            in_channels = in_channels if i == 0 else out_channels
+            nets.append(ResnetBlock(in_channels, out_channels, skip_scale=skip_scale))
+            if attention:
+                attns.append(MVAttention(out_channels, attention_heads, skip_scale=skip_scale))
+            else:
+                attns.append(None)
+        self.nets = nn.ModuleList(nets)
+        self.attns = nn.ModuleList(attns)
+
+        self.downsample = None
+        if downsample:
+            self.downsample = nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=2, padding=1)
+
+    def forward(self, x):
+        xs = []
+
+        for attn, net in zip(self.attns, self.nets):
+            x = net(x)
+            if attn:
+                x = attn(x)
+            xs.append(x)
+
+        if self.downsample:
+            x = self.downsample(x)
+            xs.append(x)
+  
+        return x, xs
+
+
 if __name__ == "__main__":
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     print(device)
