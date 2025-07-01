@@ -3,6 +3,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import numpy as np
+
 from attention import Attention
 from functools import partial
 from typing import Tuple, Literal
@@ -184,13 +186,159 @@ class MidBlock(nn.Module):
             x = net(x)
         return x
     
+class UpBlock(nn.Module):
+    def __init__(
+        self,
+        in_channels: int,
+        prev_out_channels: int,
+        out_channels: int,
+        num_layers: int = 1,
+        upsample: bool = True,
+        attention: bool = True,
+        attention_heads: int = 16,
+        skip_scale: float = 1,
+    ):
+        super().__init__()
 
+        nets = []
+        attns = []
+        for i in range(num_layers):
+            cin = in_channels if i == 0 else out_channels
+            cskip = prev_out_channels if (i == num_layers - 1) else out_channels
+
+            nets.append(ResnetBlock(cin + cskip, out_channels, skip_scale=skip_scale))
+            if attention:
+                attns.append(MVAttention(out_channels, attention_heads, skip_scale=skip_scale))
+            else:
+                attns.append(None)
+        self.nets = nn.ModuleList(nets)
+        self.attns = nn.ModuleList(attns)
+
+        self.upsample = None
+        if upsample:
+            self.upsample = nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1)
+
+    def forward(self, x, xs):
+
+        for attn, net in zip(self.attns, self.nets):
+            res_x = xs[-1]
+            xs = xs[:-1]
+            x = torch.cat([x, res_x], dim=1)
+            x = net(x)
+            if attn:
+                x = attn(x)
+            
+        if self.upsample:
+            x = F.interpolate(x, scale_factor=2.0, mode='nearest')
+            x = self.upsample(x)
+        
+        return x
+
+
+# it could be asymmetric!
+class UNet(nn.Module):
+    def __init__(
+        self,
+        in_channels: int = 9,
+        out_channels: int = 14  ,
+        down_channels: Tuple[int, ...] = (64, 128, 256, 512, 1024, 1024),
+        down_attention: Tuple[bool, ...] = (False, False, False, True, True, True),
+        mid_attention: bool = True,
+        up_channels: Tuple[int, ...] = (1024, 1024, 512, 256, 128),
+        up_attention: Tuple[bool, ...] = (True, True, True, False, False),
+        layers_per_block: int = 2,
+        skip_scale: float = np.sqrt(0.5),
+    ):
+        super().__init__()
+
+        # first
+        self.conv_in = nn.Conv2d(in_channels, down_channels[0], kernel_size=3, stride=1, padding=1)
+
+        # down
+        down_blocks = []
+        cout = down_channels[0]
+        for i in range(len(down_channels)):
+            cin = cout
+            cout = down_channels[i]
+
+            down_blocks.append(DownBlock(
+                cin, cout, 
+                num_layers=layers_per_block, 
+                downsample=(i != len(down_channels) - 1), # not final layer
+                attention=down_attention[i],
+                skip_scale=skip_scale,
+            ))
+        self.down_blocks = nn.ModuleList(down_blocks)
+
+        # mid
+        self.mid_block = MidBlock(down_channels[-1], attention=mid_attention, skip_scale=skip_scale)
+
+        # up
+        up_blocks = []
+        cout = up_channels[0]
+        for i in range(len(up_channels)):
+            cin = cout
+            cout = up_channels[i]
+            cskip = down_channels[max(-2 - i, -len(down_channels))] # for assymetric
+
+            up_blocks.append(UpBlock(
+                cin, cskip, cout, 
+                num_layers=layers_per_block + 1, # one more layer for up
+                upsample=(i != len(up_channels) - 1), # not final layer
+                attention=up_attention[i],
+                skip_scale=skip_scale,
+            ))
+        self.up_blocks = nn.ModuleList(up_blocks)
+
+        # last
+        self.norm_out = nn.GroupNorm(num_channels=up_channels[-1], num_groups=32, eps=1e-5)
+        self.conv_out = nn.Conv2d(up_channels[-1], out_channels, kernel_size=3, stride=1, padding=1)
+
+
+    def forward(self, x):
+        # x: [B, Cin, H, W]
+
+        # first
+        x = self.conv_in(x)
+
+        # down
+        xss = [x]
+        for block in (self.down_blocks):
+            x, xs = block(x)
+            xss.extend(xs)
+        
+        # mid
+        x = self.mid_block(x)
+
+        # up
+        for block in (self.up_blocks):
+            xs = xss[-len(block.nets):]
+            xss = xss[:-len(block.nets)]
+            x = block(x, xs)
+            
+
+        # last
+        x = self.norm_out(x)
+        x = F.silu(x)
+        x = self.conv_out(x) # [B, Cout, H', W']
+
+        return x
 
 
 if __name__ == "__main__":
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     print(device)
-    x = torch.randn((4, 32, 16, 16)).to(device)
-    mvattn = MVAttention(32).to(device)
-    resblock = ResnetBlock(32, 32, 'default').to(device)
-    print(resblock(x).shape)
+    x = torch.randn((4, 9, 64, 64)).to(device)
+    model = UNet(
+        9, 14, 
+    ).to(device)
+    print(model(x).shape)
+
+    # mvattn = MVAttention(32).to(device)
+    # resblock = ResnetBlock(32, 32, 'default').to(device)
+    # downblock = DownBlock(32, 32).to(device)
+    # midblock = MidBlock(32, 32).to(device)
+
+    # print(resblock(x).shape)
+    # print(downblock(x)[0].shape)
+    # print(midblock(x).shape)
