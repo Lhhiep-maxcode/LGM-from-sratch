@@ -106,3 +106,40 @@ class GaussianRenderer:
 
         PlyData([el]).write(path)
     
+    def load_ply(self, path, compatible=True):
+
+        from plyfile import PlyData, PlyElement
+
+        plydata = PlyData.read(path)
+
+        xyz = np.stack((np.asarray(plydata.elements[0]["x"]),
+                        np.asarray(plydata.elements[0]["y"]),
+                        np.asarray(plydata.elements[0]["z"])),  axis=1)
+        print("Number of points at loading : ", xyz.shape[0])
+
+        opacities = np.asarray(plydata.elements[0]["opacity"])[..., np.newaxis]
+
+        shs = np.zeros((xyz.shape[0], 3))
+        shs[:, 0] = np.asarray(plydata.elements[0]["f_dc_0"])
+        shs[:, 1] = np.asarray(plydata.elements[0]["f_dc_1"])
+        shs[:, 2] = np.asarray(plydata.elements[0]["f_dc_2"])
+
+        scale_names = [p.name for p in plydata.elements[0].properties if p.name.startswith("scale_")]
+        scales = np.zeros((xyz.shape[0], len(scale_names)))
+        for idx, attr_name in enumerate(scale_names):
+            scales[:, idx] = np.asarray(plydata.elements[0][attr_name])
+
+        rot_names = [p.name for p in plydata.elements[0].properties if p.name.startswith("rot_")]
+        rots = np.zeros((xyz.shape[0], len(rot_names)))
+        for idx, attr_name in enumerate(rot_names):
+            rots[:, idx] = np.asarray(plydata.elements[0][attr_name])
+          
+        gaussians = np.concatenate([xyz, opacities, scales, rots, shs], axis=1)
+        gaussians = torch.from_numpy(gaussians).float() # cpu
+
+        if compatible:
+            gaussians[..., 3:4] = torch.sigmoid(gaussians[..., 3:4])
+            gaussians[..., 4:7] = torch.exp(gaussians[..., 4:7])
+            gaussians[..., 11:] = 0.28209479177387814 * gaussians[..., 11:] + 0.5
+
+        return gaussians
