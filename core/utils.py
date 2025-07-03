@@ -74,6 +74,8 @@ def grid_distortion(images, strength=0.5):
     # num_steps: int, grid resolution for distortion
     # strength: float in [0, 1], strength of distortion
 
+    # USED FOR IMAGE PIXEL DISTORTION
+
     B, C, H, W = images.shape
 
     num_steps = np.random.randint(8, 17)
