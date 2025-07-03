@@ -38,6 +38,76 @@ class GaussianRenderer:
         self.projection_matrix[3, 2] = - (cfg.zfar * cfg.znear) / (cfg.zfar - cfg.znear)
         self.projection_matrix[2, 3] = 1
 
+    def render(self, gaussians, cam_view, cam_view_proj, cam_pos, bg_color=None, scale_modifier=1):
+        # gaussians: [B, N, 14]
+        # cam_view: [B, V, 4, 4]  (Transforming (world space -> camera space))
+        # cam_view_proj: [B, V, 4, 4]  (Transforming (world space -> clip space) for perspective projection: projection_matrix @ cam_view) 
+        # cam_pos: [B, V, 3]
+
+        device = gaussians.device
+        B, V = cam_view.shape[:2]
+
+        # loop of loop...
+        images = []
+        alphas = []
+        for b in range(B):
+
+            # pos, opacity, scale, rotation, shs
+            means3D = gaussians[b, :, 0:3].contiguous().float()
+            opacity = gaussians[b, :, 3:4].contiguous().float()
+            scales = gaussians[b, :, 4:7].contiguous().float()
+            rotations = gaussians[b, :, 7:11].contiguous().float()
+            rgbs = gaussians[b, :, 11:].contiguous().float() # [N, 3]
+
+            for v in range(V):
+                
+                # render novel views
+                view_matrix = cam_view[b, v].float()
+                view_proj_matrix = cam_view_proj[b, v].float()
+                campos = cam_pos[b, v].float()
+
+                raster_settings = GaussianRasterizationSettings(
+                    image_height=self.opt.output_size,
+                    image_width=self.opt.output_size,
+                    tanfovx=self.tan_half_fovy,
+                    tanfovy=self.tan_half_fovy,
+                    bg=self.bg_color if bg_color is None else bg_color,
+                    scale_modifier=scale_modifier,
+                    viewmatrix=view_matrix,
+                    projmatrix=view_proj_matrix,
+                    sh_degree=0,
+                    campos=campos,
+                    prefiltered=False,
+                    debug=False,
+                )
+
+                rasterizer = GaussianRasterizer(raster_settings=raster_settings)
+
+                # Rasterize visible Gaussians to image, obtain their radii (on screen).
+                rendered_image, radii, rendered_depth, rendered_alpha = rasterizer(
+                    means3D=means3D,
+                    means2D=torch.zeros_like(means3D, dtype=torch.float32, device=device),
+                    shs=None,
+                    colors_precomp=rgbs,
+                    opacities=opacity,
+                    scales=scales,
+                    rotations=rotations,
+                    cov3D_precomp=None,
+                )
+
+                rendered_image = rendered_image.clamp(0, 1)
+
+                images.append(rendered_image)
+                alphas.append(rendered_alpha)
+
+        images = torch.stack(images, dim=0).view(B, V, 3, self.opt.output_size, self.opt.output_size)
+        alphas = torch.stack(alphas, dim=0).view(B, V, 1, self.opt.output_size, self.opt.output_size)
+
+        return {
+            "image": images, # [B, V, 3, H, W]
+            "alpha": alphas, # [B, V, 1, H, W]
+        }
+
     def save_ply(self, gaussians: torch.Tensor, path, compatible=True):
         # Target Gaussians example:
         # ------------------------------
