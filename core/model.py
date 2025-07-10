@@ -122,7 +122,15 @@ class LGM(nn.Module):
         #     'cam_pos': ...,
         # }
         # ------------
-        # return: loss
+        # return: results = {
+        #     'gaussians': ...,
+        #     'images_pred': ...,
+        #     'alphas_pred': ...,
+        #     'loss_mse': ...,
+        #     'loss_lpips': ...,
+        #     'loss': ...,
+        #     'psnr': ...,
+        # }
 
         results = {}
         loss = 0
@@ -151,6 +159,7 @@ class LGM(nn.Module):
         gt_images = gt_images * gt_masks + (1 - gt_masks) * bg_color.view(1, 1, 3, 1, 1)
 
         loss_mse = F.mse_loss(pred_images, gt_images) + F.mse_loss(pred_alphas, gt_masks)
+        results['loss_mse'] = loss_mse
         loss = loss + loss_mse
 
         if self.cfg.lambda_lpips > 0:
