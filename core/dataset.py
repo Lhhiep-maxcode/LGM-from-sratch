@@ -1,3 +1,5 @@
+# main.py
+
 import os
 import cv2
 import random
@@ -56,7 +58,7 @@ class ObjaverseDataset(Dataset):
         return len(self.items)
     
     def __getitem__(self, idx):
-        #  NEED TO PROCESSING DATA IN .OBJ FORMAT TO (IMAGE-CAMERA POSE) PAIRS)
+        #  NEED TO PROCESSING DATA IN .OBJ FORMAT TO (IMAGE-CAMERA POSE) PAIRS
         # your_dataset/
             # ├── uid/
             # │   ├── rgb/
@@ -140,6 +142,7 @@ class ObjaverseDataset(Dataset):
         transform = torch.tensor([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, self.cfg.cam_radius], [0, 0, 0, 1]], dtype=torch.float32) @ torch.inverse(cam_poses[0])
         cam_poses = transform.unsqueeze(0) @ cam_poses  # [V, 4, 4]
 
+        # resize input images
         images_input = F.interpolate(images[:self.cfg.num_input_views].clone(), size=(self.cfg.input_size, self.cfg.input_size), mode='bilinear', align_corners=False)   # [V, C, H, W]
         cam_poses_input = cam_poses[:self.cfg.num_input_views].clone()
         
@@ -156,7 +159,7 @@ class ObjaverseDataset(Dataset):
         results['images_output'] = F.interpolate(images, (self.cfg.output_size, self.cfg.output_size), mode='bilinear', align_corners=False)
         results['masks_output'] = F.interpolate(masks.unsqueeze(0), (self.cfg.output_size, self.cfg.output_size), mode='bilinear', align_corners=False)
 
-        # build rays for input views
+        # Plucker Embedding for input views
         rays_embeddings = []
         for i in range(self.cfg.num_input_views):
             rays_o, rays_d = get_rays(cam_poses_input, self.cfg.input_size, self.cfg.input_size, self.cfg.fovy, opengl=True)    # (h, w, 3)
@@ -179,5 +182,13 @@ class ObjaverseDataset(Dataset):
         results['cam_view_proj'] = cam_view_proj
         results['cam_pos'] = cam_pos
 
+        # results = {
+        #     'input': ...,
+        #     'images_output': ...,
+        #     'masks_output': ...,
+        #     'cam_view': ...,
+        #     'cam_view_proj': ...,
+        #     'cam_pos': ...,
+        # }
         return results
 

@@ -92,30 +92,30 @@ class CrossAttention(nn.Module):
 
         # [B, N, Cq] -> [B, N, C] -> [B, N, nh, C/nh] -> [B, nh, N, C/nh]
         q = self.scale * (self.to_q(q).reshape(B, N, self.num_heads, -1).permute(0, 2, 1, 3))
-        print("Expected: [B, nh, N, C/nh]")
-        print(q.shape)
+        # print("Expected: [B, nh, N, C/nh]")
+        # print(q.shape)
         # [B, nh, M, C/nh]
         k = (self.to_k(k).reshape(B, M, self.num_heads, -1).permute(0, 2, 1, 3))
-        print("Expected: [B, nh, M, C/nh]")
-        print(k.shape)
+        # print("Expected: [B, nh, M, C/nh]")
+        # print(k.shape)
         # [B, nh, M, C/nh]
         v = (self.to_v(v).reshape(B, M, self.num_heads, -1).permute(0, 2, 1, 3))
-        print("Expected: [B, nh, M, C/nh]")
-        print(v.shape)
+        # print("Expected: [B, nh, M, C/nh]")
+        # print(v.shape)
 
         # [B, nh, N, M]
         attn = q @ k.transpose(-2, -1)
         attn = attn.softmax(dim=-1)
         attn = self.attn_drop(attn) 
-        print("Expected [B, nh, N, M]")
-        print(attn.shape)
+        # print("Expected [B, nh, N, M]")
+        # print(attn.shape)
 
         # [B, N, C]
         x = (attn @ v).transpose(1, 2).reshape(B, N, -1)
         x = self.proj(x)
         x = self.proj_drop(x)
-        print("Expected [B, N, C]")
-        print(x.shape)
+        # print("Expected [B, N, C]")
+        # print(x.shape)
         return x
 
 
