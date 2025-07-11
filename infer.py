@@ -20,6 +20,6 @@ if cfg.resume is not None:
     else:
         ckpt = torch.load(cfg.resume, map_location='cpu')
     model.load_state_dict(ckpt, strict=False)
-    print(f'[INFO] Loaded checkpoint from {opt.resume}')
+    print(f'[INFO] Loaded checkpoint from {cfg.resume}')
 else:
     print(f'[WARN] model randomly initialized, are you sure?')
