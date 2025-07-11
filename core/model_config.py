@@ -39,6 +39,8 @@ class Options:
     ### TRAINING
     # workspace
     workspace: str = './workspace'
+    # fine-tuning
+    fine_tune: bool = True
     # resume
     resume: Optional[str] = None
     # batch size (per-GPU)
