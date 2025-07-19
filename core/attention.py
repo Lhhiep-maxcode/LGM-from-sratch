@@ -5,7 +5,20 @@ import warnings
 
 from torch import Tensor
 from torch import nn
-from torch import randn, cuda
+
+XFORMERS_ENABLED = os.environ.get("XFORMERS_DISABLED") is None
+try:
+    if XFORMERS_ENABLED:
+        from xformers.ops import memory_efficient_attention, unbind
+
+        XFORMERS_AVAILABLE = True
+        warnings.warn("xFormers is available (Attention)")
+    else:
+        warnings.warn("xFormers is disabled (Attention)")
+        raise ImportError
+except ImportError:
+    XFORMERS_AVAILABLE = False
+    warnings.warn("xFormers is not available (Attention)")
 
 class Attention(nn.Module):
     def __init__(
@@ -56,6 +69,25 @@ class Attention(nn.Module):
 
         return x
     
+class MemEffAttention(Attention):
+    def forward(self, x: Tensor, attn_bias=None) -> Tensor:
+        if not XFORMERS_AVAILABLE:
+            if attn_bias is not None:
+                raise AssertionError("xFormers is required for using nested tensors")
+            return super().forward(x)
+
+        B, N, C = x.shape
+        qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, C // self.num_heads)
+
+        q, k, v = unbind(qkv, 2)
+
+        x = memory_efficient_attention(q, k, v, attn_bias=attn_bias)
+        x = x.reshape([B, N, C])
+
+        x = self.proj(x)
+        x = self.proj_drop(x)
+        return x
+
 
 class CrossAttention(nn.Module):
     def __init__(
@@ -119,16 +151,24 @@ class CrossAttention(nn.Module):
         return x
 
 
-if __name__ == "__main__":
-    device = 'cuda' if cuda.is_available() else 'cpu'
-    print(device)
-    attn = Attention(dim=32).to(device)
-    cattn = CrossAttention(dim=32, dim_q=32, dim_k=32, dim_v=32).to(device)
-    proj = nn.Linear(32, 32, bias=True).to(device)
-    q = randn((16, 64, 32)).to(device)
-    k = randn((16, 128, 32)).to(device)
-    v = randn((16, 128, 32)).to(device)
-    x = randn((16, 64, 32)).to(device)
-    # print(attn(x).shape)
-    # print(cattn(q, k, v).shape)
-    # print(proj(x).shape)
+
+class MemEffCrossAttention(CrossAttention):
+    def forward(self, q: Tensor, k: Tensor, v: Tensor, attn_bias=None) -> Tensor:
+        if not XFORMERS_AVAILABLE:
+            if attn_bias is not None:
+                raise AssertionError("xFormers is required for using nested tensors")
+            return super().forward(x)
+
+        B, N, _ = q.shape
+        M = k.shape[1]
+
+        q = self.scale * self.to_q(q).reshape(B, N, self.num_heads, self.dim // self.num_heads) # [B, N, nh, C/nh]
+        k = self.to_k(k).reshape(B, M, self.num_heads, self.dim // self.num_heads) # [B, M, nh, C/nh]
+        v = self.to_v(v).reshape(B, M, self.num_heads, self.dim // self.num_heads) # [B, M, nh, C/nh]
+
+        x = memory_efficient_attention(q, k, v, attn_bias=attn_bias)
+        x = x.reshape(B, N, -1)
+
+        x = self.proj(x)
+        x = self.proj_drop(x)
+        return x

@@ -20,6 +20,7 @@ def main():
 
     # Load model checkpoint for FINE-TUNING
     if cfg.fine_tune and cfg.resume is not None:
+        # (cfg.resume in file type)
         if cfg.resume.endswith('safetensors'):
             ckpt = load_file(cfg.resume, device='cpu')
         else:
@@ -78,7 +79,7 @@ def main():
     )
 
     if not cfg.fine_tune and cfg.resume is not None:
-        # NOTE: cfg.resume must be saved by accelerator.save_state()
+        # NOTE: cfg.resume (dir type) must be saved by accelerator.save_state()
         accelerator.load_state(cfg.resume)
 
     best_psnr_eval = 0

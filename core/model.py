@@ -21,11 +21,11 @@ class LGM(nn.Module):
         # UNet
         self.unet = UNet(
             9, 14, 
-            down_channels=self.opt.down_channels,
-            down_attention=self.opt.down_attention,
-            mid_attention=self.opt.mid_attention,
-            up_channels=self.opt.up_channels,
-            up_attention=self.opt.up_attention,
+            down_channels=self.cfg.down_channels,
+            down_attention=self.cfg.down_attention,
+            mid_attention=self.cfg.mid_attention,
+            up_channels=self.cfg.up_channels,
+            up_attention=self.cfg.up_attention,
         )
 
         # last conv
@@ -42,7 +42,7 @@ class LGM(nn.Module):
         self.rgb_act = lambda x: 0.5 * torch.tanh(x) + 0.5 # NOTE: may use sigmoid if train again
 
         # LPIPS loss
-        if self.opt.lambda_lpips > 0:
+        if self.cfg.lambda_lpips > 0:
             self.lpips_loss = LPIPS(net='vgg')
             self.lpips_loss.requires_grad_(False)
 
@@ -61,16 +61,16 @@ class LGM(nn.Module):
         from core.utils import get_rays
 
         cam_poses = np.stack([
-            orbit_camera(elevation, 0, radius=self.opt.cam_radius),
-            orbit_camera(elevation, 90, radius=self.opt.cam_radius),
-            orbit_camera(elevation, 180, radius=self.opt.cam_radius),
-            orbit_camera(elevation, 270, radius=self.opt.cam_radius),
+            orbit_camera(elevation, 0, radius=self.cfg.cam_radius),
+            orbit_camera(elevation, 90, radius=self.cfg.cam_radius),
+            orbit_camera(elevation, 180, radius=self.cfg.cam_radius),
+            orbit_camera(elevation, 270, radius=self.cfg.cam_radius),
         ], axis=0) # [4, 4, 4]
         cam_poses = torch.from_numpy(cam_poses)
 
         rays_embeddings = []
         for i in range(cam_poses.shape[0]):
-            rays_o, rays_d = get_rays(cam_poses[i], self.opt.input_size, self.opt.input_size, self.opt.fovy) # [h, w, 3]
+            rays_o, rays_d = get_rays(cam_poses[i], self.cfg.input_size, self.cfg.input_size, self.cfg.fovy) # [h, w, 3]
             rays_plucker = torch.cat([torch.cross(rays_o, rays_d, dim=-1), rays_d], dim=-1) # [h, w, 6]
             rays_embeddings.append(rays_plucker)
 
