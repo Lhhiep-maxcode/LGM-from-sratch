@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 
-from attention import Attention
+from core.attention import Attention
 from functools import partial
 from typing import Tuple, Literal
 
