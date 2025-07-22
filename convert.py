@@ -421,7 +421,7 @@ class Converter(nn.Module):
             # shrink to front view as we care more about it...
             ver = np.random.randint(-5, 5)
             hor = np.random.randint(-15, 15)
-            rad = self.opt.cam_radius # np.random.uniform(1, 2)
+            rad = self.cfg.cam_radius # np.random.uniform(1, 2)
             
             pose = orbit_camera(ver, hor, rad)
             
