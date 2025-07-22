@@ -19,8 +19,8 @@ class GaussianRenderer:
     def __init__(self, cfg: Options):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.cfg = cfg
-        self.bg = torch.tensor([1, 1, 1]).to(self.device)
-
+        self.bg_color = torch.tensor([1, 1, 1], dtype=torch.float32, device="cuda")
+        
         # projection matrix
         # self.tan_half_fovy = np.tan(np.deg2rad(cfg.fovy / 2))
         # self.projection_matrix = torch.zeros((4, 4)).to(self.device)
@@ -67,8 +67,8 @@ class GaussianRenderer:
                 campos = cam_pos[b, v].float()
 
                 raster_settings = GaussianRasterizationSettings(
-                    image_height=self.opt.output_size,
-                    image_width=self.opt.output_size,
+                    image_height=self.cfg.output_size,
+                    image_width=self.cfg.output_size,
                     tanfovx=self.tan_half_fovy,
                     tanfovy=self.tan_half_fovy,
                     bg=self.bg_color if bg_color is None else bg_color,
@@ -100,8 +100,8 @@ class GaussianRenderer:
                 images.append(rendered_image)
                 alphas.append(rendered_alpha)
 
-        images = torch.stack(images, dim=0).view(B, V, 3, self.opt.output_size, self.opt.output_size)
-        alphas = torch.stack(alphas, dim=0).view(B, V, 1, self.opt.output_size, self.opt.output_size)
+        images = torch.stack(images, dim=0).view(B, V, 3, self.cfg.output_size, self.cfg.output_size)
+        alphas = torch.stack(alphas, dim=0).view(B, V, 1, self.cfg.output_size, self.cfg.output_size)
 
         return {
             "image": images, # [B, V, 3, H, W]
@@ -141,6 +141,7 @@ class GaussianRenderer:
         # filter out Gaussian with low opacity value
         mask = opacity.squeeze(-1) >= 0.005
         means3D = means3D[mask]
+        opacity = opacity[mask]
         scales = scales[mask]
         rotations = rotations[mask]
         shs = shs[mask]
