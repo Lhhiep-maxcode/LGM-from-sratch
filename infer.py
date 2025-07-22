@@ -119,13 +119,14 @@ def process(cfg: Options, path):
 
         for azi in tqdm.tqdm(azimuth):
 
+            # c2w matrix
             cam_poses = torch.from_numpy(orbit_camera(elevation, azi, radius=cfg.cam_radius, opengl=True)).unsqueeze(0).to(device)
 
             cam_poses[:, :3, 1:3] *= -1 # invert up & forward direction
 
             # cameras needed by gaussian rasterizer
-            cam_view = torch.inverse(cam_poses).transpose(1, 2) # [V, 4, 4]
-            cam_view_proj = cam_view @ proj_matrix # [V, 4, 4]
+            cam_view = torch.inverse(cam_poses).transpose(1, 2) # [V, 4, 4] --- w2c matrix
+            cam_view_proj = cam_view @ proj_matrix # [V, 4, 4] --- w2c2clip matrix
             cam_pos = - cam_poses[:, :3, 3] # [V, 3]
 
             if cfg.fancy_video:

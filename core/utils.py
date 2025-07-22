@@ -43,7 +43,7 @@ def get_rays(pose, h, w, fovy, opengl=True):
     # convert camera direction to world space
     rays_d = camera_dirs @ pose[:3, :3].transpose(0, 1)  # [hw, 3]
     # get the translation of camera origin related to world space to get origin ray position in world space
-    rays_o = pose[:3, 3].unsqueeze(0).expand_as(rays_d) # [hw, 3]
+    rays_o = pose[:3, 3].unsqueeze(0).expand_as(rays_d) # [1, 3] -> [hw, 3]
 
     rays_o = rays_o.view(h, w, 3)
     rays_d = safe_normalize(rays_d).view(h, w, 3)

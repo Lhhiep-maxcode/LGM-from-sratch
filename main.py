@@ -80,6 +80,7 @@ def main():
 
     if not cfg.fine_tune and cfg.resume is not None:
         # NOTE: cfg.resume (dir type) must be saved by accelerator.save_state()
+        # Continue training by loading all state of optimizer, model, scheduler
         accelerator.load_state(cfg.resume)
 
     best_psnr_eval = 0
