@@ -122,6 +122,7 @@ def process(cfg: Options, path):
             # c2w matrix
             cam_poses = torch.from_numpy(orbit_camera(elevation, azi, radius=cfg.cam_radius, opengl=True)).unsqueeze(0).to(device)
 
+            # from OpenGL to COLMAP
             cam_poses[:, :3, 1:3] *= -1 # invert up & forward direction
 
             # cameras needed by gaussian rasterizer

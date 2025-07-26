@@ -1,4 +1,9 @@
 # main.py
+# opengl/blender -> colmap style
+# use opengl for Plucker Embedding
+# OpenGL (x=Right, y=Up, z=Backward (camera looks along −Z))
+# Colmap (x=Right, y=Down, z=Forward (camera looks along +Z))
+
 
 import os
 import cv2
@@ -186,9 +191,9 @@ class ObjaverseDataset(Dataset):
         #     'input': ...,
         #     'images_output': ...,
         #     'masks_output': ...,
-        #     'cam_view': ...,
-        #     'cam_view_proj': ...,
-        #     'cam_pos': ...,
+        #     'cam_view': ...,          (colmap coordinate)
+        #     'cam_view_proj': ...,     (colmap coordinate)
+        #     'cam_pos': ...,           (colmap coordinate)
         # }
         return results
 
