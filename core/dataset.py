@@ -155,6 +155,7 @@ class ObjaverseDataset(Dataset):
 
         images_input = TF.normalize(images_input, IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD)
         results['images_input'] = images_input
+        results['cam_poses_input'] = cam_poses_input
 
         # resize ground-truth images, still in range [0, 1]
         results['images_output'] = F.interpolate(images, (self.cfg.output_size, self.cfg.output_size), mode='bilinear', align_corners=False)
@@ -173,9 +174,11 @@ class ObjaverseDataset(Dataset):
         results['cam_pos'] = cam_pos
 
         # results = {
-        #     'images_input': ...,
-        #     'images_output': ...,
-        #     'masks_output': ...,
+        #     'number_of_input_views': ....
+        #     'images_input': ...,      (processed input images 256x256)
+        #     'cam_poses_input': ...,   (256x256)
+        #     'images_output': ...,     (512x512)
+        #     'masks_output': ...,      (.......)
         #     'cam_view': ...,          (colmap coordinate)
         #     'cam_view_proj': ...,     (colmap coordinate)
         #     'cam_pos': ...,           (colmap coordinate)
