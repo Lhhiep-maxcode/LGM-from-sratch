@@ -22,6 +22,7 @@ class Options:
     train_size: int = 64000
     test_size: int = 8000
     val_size: int = 8000
+    data_path: str = '/kaggle/input/objaverse-subset'
     # data mode (only support s3 now)   ---> CHUA HIEU
     data_mode: Literal['s3'] = 's3'
     # Field of view in y direction of the dataset   

@@ -3,6 +3,8 @@ from core.model_config import AllConfigs, Options
 from core.model import LGM
 from accelerate import Accelerator
 from safetensors.torch import load_file
+from core.dataset import ObjaverseDataset as Dataset
+
 
 import torch
 import tyro
@@ -38,13 +40,8 @@ def main():
             else:
                 accelerator.print(f'[WARN] unexpected param {k}: {v.shape}')
 
-    # data
-    if cfg.data_mode == 's3':
-        from core.dataset import ObjaverseDataset as Dataset
-    else:
-        raise NotImplementedError
     
-    train_dataset = Dataset(cfg, training=True)
+    train_dataset = Dataset(data_path=cfg.data_path, cfg=cfg, type='train')
     train_dataloader = torch.utils.data.DataLoader(
         train_dataset,
         batch_size=cfg.batch_size,
@@ -54,7 +51,7 @@ def main():
         drop_last=True
     )
 
-    test_dataset = Dataset(cfg, training=False)
+    test_dataset = Dataset(data_path=cfg.data_path, cfg=cfg, type='test')
     test_dataloader = torch.utils.data.DataLoader(
         test_dataset,
         batch_size=cfg.batch_size,
@@ -63,6 +60,16 @@ def main():
         drop_last=False,
         pin_memory=True
     )
+
+    # val_dataset = Dataset(data_path=cfg.data_path, cfg=cfg, type='val')
+    # val_dataloader = torch.utils.data.DataLoader(
+    #     test_dataset,
+    #     batch_size=cfg.batch_size,
+    #     shuffle=False,
+    #     num_workers=0,
+    #     drop_last=False,
+    #     pin_memory=True
+    # )
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.lr, weight_decay=0.05, betas=(0.9, 0.95))
 
