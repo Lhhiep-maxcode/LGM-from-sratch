@@ -147,7 +147,7 @@ class ObjaverseDataset(Dataset):
         cam_poses_input = cam_poses[:number_of_input_views].clone()
         
         # data augmentation
-        if self.training:
+        if not self.debug:
             if random.random() < self.cfg.prob_grid_distortion:
                 images_input[1:] = grid_distortion(images_input[1:])
             if random.random() < self.cfg.prob_cam_jitter:
@@ -166,7 +166,7 @@ class ObjaverseDataset(Dataset):
 
         # cameras needed by gaussian rasterizer
         cam_view = torch.inverse(cam_poses).transpose(1, 2)     # World-to-camera matrix: [V, 4, 4]
-        cam_view_proj = cam_view @ self.proj_matrix     # world-to-clip matrix: [V, 4, 4]
+        cam_view_proj = cam_view @ self.projection_matrix     # world-to-clip matrix: [V, 4, 4]
         cam_pos = - cam_poses[:, :3, 3] # [V, 3]
         
         results['cam_view'] = cam_view
