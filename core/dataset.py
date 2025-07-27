@@ -159,7 +159,7 @@ class ObjaverseDataset(Dataset):
 
         # resize ground-truth images, still in range [0, 1]
         results['images_output'] = F.interpolate(images, (self.cfg.output_size, self.cfg.output_size), mode='bilinear', align_corners=False)
-        results['masks_output'] = F.interpolate(masks.unsqueeze(0), (self.cfg.output_size, self.cfg.output_size), mode='bilinear', align_corners=False)
+        results['masks_output'] = F.interpolate(masks.unsqueeze(1), (self.cfg.output_size, self.cfg.output_size), mode='bilinear', align_corners=False)
 
         # opengl to colmap camera for gaussian renderer
         cam_poses[:, :3, 1:3] *= -1 # invert up & forward direction
@@ -174,6 +174,7 @@ class ObjaverseDataset(Dataset):
         results['cam_pos'] = cam_pos
 
         # results = {
+        #     [C, H, W]
         #     'number_of_input_views': ....
         #     'images_input': ...,      (processed input images 256x256)
         #     'cam_poses_input': ...,   (256x256)
