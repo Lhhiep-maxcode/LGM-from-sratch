@@ -15,6 +15,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.transforms.functional as TF
 from torch.utils.data import Dataset
+from scipy.stats import gamma
+
 
 import kiui
 from core.model_config import Options
@@ -25,30 +27,22 @@ IMAGENET_DEFAULT_STD = (0.229, 0.224, 0.225)
 
 
 class ObjaverseDataset(Dataset):
-
-    def _warn(self):
-        raise NotImplementedError('this dataset is just an example and cannot be used directly, you should modify it to your own setting (location: core\dataset.py)! (search keyword TODO)')
-
-    def __init__(self, cfg: Options, training=True):
+    def __init__(self, data_path, cfg: Options, debug=False):
         
+        self.data_path = data_path
         self.cfg = cfg
-        self.training = training
-
-        # TODO: remove this barrier
-        self._warn()
+        self.debug = debug
 
         # TODO: load the list of objects for training
-        self.items = []
-        with open('TODO: file containing the list', 'r') as f:
-            for line in f.readlines():
-                self.items.append(line.strip())
+        self.items = [name for name in os.listdir(data_path)
+                      if os.path.isdir(os.path.join(data_path, name))]
 
         # naive split
-        if self.training:
+        if not self.debug:
             self.items = self.items
         else:
             # debug mode
-            self.items = self.items[-self.opt.batch_size:]
+            self.items = self.items[-self.cfg.batch_size:]
 
         # default camera intrinsics
         self.tan_half_fovy = np.tan(np.deg2rad(self.cfg.fovy / 2))
@@ -59,11 +53,20 @@ class ObjaverseDataset(Dataset):
         self.projection_matrix[3, 2] = - (self.cfg.zfar * self.cfg.znear) / (self.cfg.zfar - self.cfg.znear)
         self.projection_matrix[2, 3] = 1
 
+        # distribution for sampling views
+        shape_k = 3.27           # Shape parameter (affects skewness)
+        scale_theta = 3.4       # Scale parameter (affects spread)
+        self.range = np.arange(1, 26)
+
+        self.pdf = gamma.pdf(self.range, a=shape_k, scale=scale_theta)
+        self.pdf[:3] = 0
+        self.pdf = self.pdf / self.pdf.sum()
+
     def __len__(self):
         return len(self.items)
     
     def __getitem__(self, idx):
-        #  NEED TO PROCESSING DATA IN .OBJ FORMAT TO (IMAGE-CAMERA POSE) PAIRS
+        #  NEED TO PROCESS DATA IN .OBJ FORMAT TO (IMAGE-CAMERA POSE) PAIRS
         # your_dataset/
             # ├── uid/
             # │   ├── rgb/
@@ -77,45 +80,39 @@ class ObjaverseDataset(Dataset):
         uid = self.items[idx]
         results = {}
 
+        # number of input images
+        number_of_input_views = np.random.choice(self.range, p=self.pdf)
+
         # load num_views images
         images = []
         masks = []
         cam_poses = []
         
-        vid_cnt = 0
+        view_ids = np.random.permutation(np.arange(0, 25))
 
-        # TODO: choose views, based on your rendering settings
-        # Selects a set of camera viewpoints (frames) for this object
-        if self.training:
-            # input views are in (36, 72), other views are randomly selected
-            vids = np.random.permutation(np.arange(36, 73))[:self.cfg.num_input_views].tolist() + np.random.permutation(100).tolist()
-        else:
-            # fixed views
-            vids = np.arange(36, 73, 4).tolist() + np.arange(100).tolist()
-
-        for vid in vids:
+        for view_id in view_ids:
         
-            image_path = os.path.join(uid, 'rgb', f'{vid:03d}.png')     # (Vd: uid/rgb/070.png)
-            camera_path = os.path.join(uid, 'pose', f'{vid:03d}.txt')   # (Vd: uid/pose/070.txt)
+            # data path: /kaggle/input/objaverse-subset/archive_4
+            image_path = os.path.join(self.data_path, uid, 'rgb', f'{view_id:03d}.png')
+            camera_path = os.path.join(self.data_path, uid, 'pose', f'{view_id:03d}.txt') 
 
             try:
                 # TODO: load data (modify self.client here)
-                image = np.frombuffer(self.client.get(image_path), np.uint8)
-                image = torch.from_numpy(cv2.imdecode(image, cv2.IMREAD_UNCHANGED).astype(np.float32) / 255) # [512, 512, 4] in [0, 1]
-                c2w = [float(t) for t in self.client.get(camera_path).decode().strip().split(' ')]
-                c2w = torch.tensor(c2w, dtype=torch.float32).reshape(4, 4)
+                image = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)  # shape: [512, 512, 4]
+                image = image.astype(np.float32) / 255.0
+                image = torch.from_numpy(image)  # shape: [H, W, C]
+                
+                with open(camera_path, 'r') as f:
+                    lines = f.readlines()
+                    
+                    # OpenGL camera matrix: [4, 4]
+                    c2w = torch.tensor([list(map(float, line.strip().split())) for line in lines]).reshape(4, 4)
             except Exception as e:
                 # print(f'[WARN] dataset {uid} {vid}: {e}')
                 continue
-            
-            # TODO: you may have a different camera system
-            # blender world + opencv cam --> opengl world & cam
-            c2w[1] *= -1
-            c2w[[1, 2]] = c2w[[2, 1]]
-            c2w[:3, 1:3] *= -1 # invert up and forward direction
 
-            # scale up radius to fully use the [-1, 1]^3 space!
-            c2w[:3, 3] *= self.cfg.cam_radius / 1.5 # 1.5 is the default scale
+            # scale up radius to make model make scale predictions
+            c2w[:3, 3] *= self.cfg.cam_radius / 1.5 # 1.5 is the default scale of the dataset
         
             # Background removing
             image = image.permute(2, 0, 1) # [4, 512, 512]
@@ -127,14 +124,12 @@ class ObjaverseDataset(Dataset):
             masks.append(mask.squeeze(0))
             cam_poses.append(c2w)
 
-            vid_cnt += 1
-            if vid_cnt == self.cfg.num_views:
-                break
-
-        if vid_cnt < self.opt.num_views:
-            print(f'[WARN] dataset {uid}: not enough valid views, only {vid_cnt} views found!')
+        
+        view_cnt = len(images)
+        if view_cnt < self.cfg.num_views:
+            print(f'[WARN] dataset {uid}: not enough valid views, only {view_cnt} views found!')
             # Padding to be enough views
-            n = self.opt.num_views - vid_cnt
+            n = self.cfg.num_views - view_cnt
             images = images + [images[-1]] * n
             masks = masks + [masks[-1]] * n
             cam_poses = cam_poses + [cam_poses[-1]] * n
@@ -148,32 +143,22 @@ class ObjaverseDataset(Dataset):
         cam_poses = transform.unsqueeze(0) @ cam_poses  # [V, 4, 4]
 
         # resize input images
-        images_input = F.interpolate(images[:self.cfg.num_input_views].clone(), size=(self.cfg.input_size, self.cfg.input_size), mode='bilinear', align_corners=False)   # [V, C, H, W]
-        cam_poses_input = cam_poses[:self.cfg.num_input_views].clone()
+        images_input = F.interpolate(images[:number_of_input_views].clone(), size=(self.cfg.input_size, self.cfg.input_size), mode='bilinear', align_corners=False)   # [V, C, H, W]
+        cam_poses_input = cam_poses[:number_of_input_views].clone()
         
         # data augmentation
         if self.training:
             if random.random() < self.cfg.prob_grid_distortion:
                 images_input[1:] = grid_distortion(images_input[1:])
             if random.random() < self.cfg.prob_cam_jitter:
-                cam_poses[1:] = orbit_camera_jitter(cam_poses_input[1:])
+                cam_poses_input[1:] = orbit_camera_jitter(cam_poses_input[1:])
 
         images_input = TF.normalize(images_input, IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD)
+        results['images_input'] = images_input
 
         # resize ground-truth images, still in range [0, 1]
         results['images_output'] = F.interpolate(images, (self.cfg.output_size, self.cfg.output_size), mode='bilinear', align_corners=False)
         results['masks_output'] = F.interpolate(masks.unsqueeze(0), (self.cfg.output_size, self.cfg.output_size), mode='bilinear', align_corners=False)
-
-        # Plucker Embedding for input views
-        rays_embeddings = []
-        for i in range(self.cfg.num_input_views):
-            rays_o, rays_d = get_rays(cam_poses_input, self.cfg.input_size, self.cfg.input_size, self.cfg.fovy, opengl=True)    # (h, w, 3)
-            rays_plucker = torch.cat([torch.cross(rays_o, rays_d, dim=-1), rays_d], dim=-1)     # (h, w, 6)
-            rays_embeddings.append(rays_plucker)
-
-        rays_embeddings = torch.stack(rays_embeddings, dim=0).permute(0, 3, 1, 2).contiguous()      # (V=4, 6, h, w)
-        final_input = torch.cat([images_input, rays_embeddings], dim=-1)        # (v=4, 9, h, w)
-        results['input'] = final_input
 
         # opengl to colmap camera for gaussian renderer
         cam_poses[:, :3, 1:3] *= -1 # invert up & forward direction
@@ -188,7 +173,7 @@ class ObjaverseDataset(Dataset):
         results['cam_pos'] = cam_pos
 
         # results = {
-        #     'input': ...,
+        #     'images_input': ...,
         #     'images_output': ...,
         #     'masks_output': ...,
         #     'cam_view': ...,          (colmap coordinate)

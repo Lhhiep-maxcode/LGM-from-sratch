@@ -28,9 +28,7 @@ class Options:
     # camera far plane (for clipping)   
     zfar: float = 2.5
     # number of all views (input + output)
-    num_views: int = 12
-    # number of views   
-    num_input_views: int = 4
+    num_views: int = 25
     # camera radius (radius of camera orbitting around object)   ---> CHUA HIEU
     cam_radius: float = 1.5 # to better use [-1, 1]^3 space
     # num workers
