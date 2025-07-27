@@ -16,6 +16,8 @@ import torch.nn.functional as F
 import torchvision.transforms.functional as TF
 from torch.utils.data import Dataset
 from scipy.stats import gamma
+from typing import Tuple, Literal, Dict, Optional
+
 
 
 import kiui
@@ -27,22 +29,23 @@ IMAGENET_DEFAULT_STD = (0.229, 0.224, 0.225)
 
 
 class ObjaverseDataset(Dataset):
-    def __init__(self, data_path, cfg: Options, debug=False):
+    def __init__(self, data_path, cfg: Options, type: Literal['train', 'test', 'val']='train'):
         
         self.data_path = data_path
         self.cfg = cfg
-        self.debug = debug
+        self.type = type if type in ['train', 'test', 'val'] else 'train'
 
         # TODO: load the list of objects for training
         self.items = [name for name in os.listdir(data_path)
                       if os.path.isdir(os.path.join(data_path, name))]
 
         # naive split
-        if not self.debug:
-            self.items = self.items
+        if self.type == 'val':
+            self.items = self.items[-self.cfg.val_size:]
+        elif self.type == 'test':
+            self.items = self.items[-(self.cfg.val_size + self.cfg.test_size):]
         else:
-            # debug mode
-            self.items = self.items[-self.cfg.batch_size:]
+            self.items = self.items[:-(self.cfg.val_size + self.cfg.test_size)]
 
         # default camera intrinsics
         self.tan_half_fovy = np.tan(np.deg2rad(self.cfg.fovy / 2))
@@ -147,7 +150,7 @@ class ObjaverseDataset(Dataset):
         cam_poses_input = cam_poses[:number_of_input_views].clone()
         
         # data augmentation
-        if not self.debug:
+        if self.type == 'train':
             if random.random() < self.cfg.prob_grid_distortion:
                 images_input[1:] = grid_distortion(images_input[1:])
             if random.random() < self.cfg.prob_cam_jitter:
