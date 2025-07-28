@@ -85,6 +85,7 @@ class ObjaverseDataset(Dataset):
 
         # number of input images
         number_of_input_views = np.random.choice(self.range, p=self.pdf)
+        results['number_of_input_views'] = number_of_input_views
 
         # load num_views images
         images = []
@@ -157,7 +158,27 @@ class ObjaverseDataset(Dataset):
                 cam_poses_input[1:] = orbit_camera_jitter(cam_poses_input[1:])
 
         images_input = TF.normalize(images_input, IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD)
-        results['images_input'] = images_input
+
+        # build rays for input views
+        rays_embeddings = []
+        for i in range(number_of_input_views):
+            rays_o, rays_d = get_rays(cam_poses_input[i], self.cfg.input_size, self.cfg.input_size, self.cfg.fovy) # [h, w, 3]
+            rays_plucker = torch.cat([torch.cross(rays_o, rays_d, dim=-1), rays_d], dim=-1) # [h, w, 6]
+            rays_embeddings.append(rays_plucker)
+
+        rays_embeddings = torch.stack(rays_embeddings, dim=0).permute(0, 3, 1, 2).contiguous() # [V, 6, h, w]
+        final_input = torch.cat([images_input, rays_embeddings], dim=1) # [V=4, 9, H, W]
+
+        repeats = self.cfg.num_views // number_of_input_views
+        remainder = self.cfg.num_views % number_of_input_views
+        final_input = final_input.repeat(repeats, 1, 1, 1)
+        cam_poses_input = cam_poses_input.repeat(repeats, 1, 1)
+        if remainder > 0:
+            final_input = torch.cat([final_input, final_input[:remainder]], dim=0)
+            cam_poses_input = torch.cat([cam_poses_input, cam_poses_input[:remainder]], dim=0)
+        
+
+        results['input'] = final_input
         results['cam_poses_input'] = cam_poses_input
 
         # resize ground-truth images, still in range [0, 1]
@@ -179,9 +200,9 @@ class ObjaverseDataset(Dataset):
         # results = {
         #     [C, H, W]
         #     'number_of_input_views': ....
-        #     'images_input': ...,      (processed input images 256x256)
-        #     'cam_poses_input': ...,   (256x256)
-        #     'images_output': ...,     (512x512)
+        #     'input': ...,             (processed input images 25x9x256x256)
+        #     'cam_poses_input': ...,   
+        #     'images_output': ...,     (25x3x512x512)
         #     'masks_output': ...,      (.......)
         #     'cam_view': ...,          (colmap coordinate)
         #     'cam_view_proj': ...,     (colmap coordinate)
