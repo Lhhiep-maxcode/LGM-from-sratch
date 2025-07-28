@@ -101,7 +101,6 @@ class ObjaverseDataset(Dataset):
             camera_path = os.path.join(self.data_path, uid, 'pose', f'{view_id:03d}.txt') 
 
             try:
-                # TODO: load data (modify self.client here)
                 image = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)  # shape: [512, 512, 4]
                 image = image.astype(np.float32) / 255.0
                 image = torch.from_numpy(image)  # shape: [H, W, C]
@@ -171,15 +170,17 @@ class ObjaverseDataset(Dataset):
 
         repeats = self.cfg.num_views // number_of_input_views
         remainder = self.cfg.num_views % number_of_input_views
-        final_input = final_input.repeat(repeats, 1, 1, 1)
-        cam_poses_input = cam_poses_input.repeat(repeats, 1, 1)
-        if remainder > 0:
-            final_input = torch.cat([final_input, final_input[:remainder]], dim=0)
-            cam_poses_input = torch.cat([cam_poses_input, cam_poses_input[:remainder]], dim=0)
+        padded_final_input = final_input.repeat(repeats, 1, 1, 1)
+        padded_cam_poses_input = cam_poses_input.repeat(repeats, 1, 1)
         
 
-        results['input'] = final_input
-        results['cam_poses_input'] = cam_poses_input
+        if remainder > 0:
+            padded_final_input = torch.cat([padded_final_input, final_input[:remainder]], dim=0)
+            padded_cam_poses_input = torch.cat([padded_cam_poses_input, cam_poses_input[:remainder]], dim=0)
+        
+
+        results['input'] = padded_final_input
+        results['cam_poses_input'] = padded_cam_poses_input
 
         # resize ground-truth images, still in range [0, 1]
         results['images_output'] = F.interpolate(images, (self.cfg.output_size, self.cfg.output_size), mode='bilinear', align_corners=False)
@@ -209,4 +210,3 @@ class ObjaverseDataset(Dataset):
         #     'cam_pos': ...,           (colmap coordinate)
         # }
         return results
-
