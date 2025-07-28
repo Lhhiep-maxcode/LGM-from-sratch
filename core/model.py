@@ -10,6 +10,7 @@ from core.model_config import Options
 from core.unet import UNet
 from core.gs import GaussianRenderer
 from kiui.lpips import LPIPS
+from core.utils import get_rays
 
 
 class LGM(nn.Module):
@@ -111,15 +112,18 @@ class LGM(nn.Module):
         gaussians = torch.cat([pos, opacity, scale, rotation, rgbs], dim=-1)    # [B, N, 14]
         return gaussians
     
-    def forward(self, data, step_ratio=0):
+    def forward(self, data):
         # data: output of the dataloader
         # data = {
-        #     'input': ...,
-        #     'images_output': ...,
-        #     'masks_output': ...,
-        #     'cam_view': ...,
-        #     'cam_view_proj': ...,
-        #     'cam_pos': ...,
+        #     [C, H, W]
+        #     'number_of_input_views': ....
+        #     'input': ...,             (processed input images 25x9x256x256)
+        #     'cam_poses_input': ...,   
+        #     'images_output': ...,     (25x3x512x512)
+        #     'masks_output': ...,      (.......)
+        #     'cam_view': ...,          (colmap coordinate)
+        #     'cam_view_proj': ...,     (colmap coordinate)
+        #     'cam_pos': ...,           (colmap coordinate)
         # }
         # ------------
         # return: results = {
@@ -135,7 +139,7 @@ class LGM(nn.Module):
         results = {}
         loss = 0
 
-        images = data['input']  # [B, 4, 9, h, W], input features (not necessarily orthogonal)
+        images = data['input'][:, :4]  # [B, 4, 9, H, W], input features (not necessarily orthogonal)
 
         # predicting 3DGS representation
         gaussians = self.forward_gaussians(images)  # [B, N, 14]

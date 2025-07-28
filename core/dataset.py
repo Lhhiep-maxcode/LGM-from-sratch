@@ -43,9 +43,9 @@ class ObjaverseDataset(Dataset):
         if self.type == 'val':
             self.items = self.items[-self.cfg.val_size:]
         elif self.type == 'test':
-            self.items = self.items[-(self.cfg.val_size + self.cfg.test_size):]
+            self.items = self.items[-(self.cfg.val_size + self.cfg.test_size):-self.cfg.val_size]
         else:
-            self.items = self.items[:-(self.cfg.val_size + self.cfg.test_size)]
+            self.items = self.items[:self.cfg.train_size]
 
         # default camera intrinsics
         self.tan_half_fovy = np.tan(np.deg2rad(self.cfg.fovy / 2))
