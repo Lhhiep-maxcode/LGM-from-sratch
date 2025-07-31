@@ -75,9 +75,11 @@ def main():
 
     # TODO: can consider to tuning the pct_start
     # scheduler (per-iteration)
+    # consider to use ConsineAnnealingWarmRestart to escape local
     # scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=3000, eta_min=1e-6)
     total_steps = cfg.num_epochs * len(train_dataloader)
     pct_start = 3000 / total_steps
+    # Warm up + CosineAnnealingLR
     scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=cfg.lr, total_steps=total_steps, pct_start=pct_start)
 
     # accelerate
@@ -103,7 +105,7 @@ def main():
 
                 step_ratio = (epoch + i / len(train_dataloader)) / cfg.num_epochs
 
-                out = model(data, step_ratio)
+                out = model(data)
                 loss = out['loss']
                 psnr = out['psnr']
 
@@ -114,8 +116,8 @@ def main():
                     # gradient clipping to avoid exploding gradients
                     accelerator.clip_grad_norm_(model.parameters(), cfg.gradient_clip)
 
-                    optimizer.step()
-                    scheduler.step()
+                optimizer.step()
+                scheduler.step()
 
                 total_loss += loss.detach()
                 total_psnr += psnr.detach()

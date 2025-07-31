@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 
-from core.attention import Attention
+from core.attention import MemEffAttention
 from functools import partial
 from typing import Tuple, Literal
 
@@ -32,7 +32,7 @@ class MVAttention(nn.Module):
         self.num_frames = num_frames
 
         self.norm = nn.GroupNorm(num_groups=groups, num_channels=dim, eps=eps, affine=True)
-        self.attn = Attention(dim, num_heads, qkv_bias, proj_bias, attn_drop, proj_drop)
+        self.attn = MemEffAttention(dim, num_heads, qkv_bias, proj_bias, attn_drop, proj_drop)
 
     def forward(self, x):
         BV, C, H, W = x.shape
