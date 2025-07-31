@@ -41,11 +41,11 @@ class ObjaverseDataset(Dataset):
 
         # naive split
         if self.type == 'val':
-            self.items = self.items[-self.cfg.val_size * len(self.items):]
+            self.items = self.items[-int(self.cfg.val_size * len(self.items)):]
         elif self.type == 'test':
-            self.items = self.items[-(self.cfg.val_size + self.cfg.test_size) * len(self.items):-self.cfg.val_size * len(self.items)]
+            self.items = self.items[-int((self.cfg.val_size + self.cfg.test_size) * len(self.items)):-int(self.cfg.val_size * len(self.items))]
         else:
-            self.items = self.items[:self.cfg.train_size * len(self.items)]
+            self.items = self.items[:int(self.cfg.train_size * len(self.items))]
 
         # default camera intrinsics
         self.tan_half_fovy = np.tan(np.deg2rad(self.cfg.fovy / 2))
@@ -86,7 +86,7 @@ class ObjaverseDataset(Dataset):
         masks = []
         cam_poses = []
         
-        view_ids = np.array(self.input_view_ids) + np.random.permutation(self.test_view_ids)
+        view_ids = self.input_view_ids + np.random.permutation(self.test_view_ids).tolist()
         view_ids = view_ids[:self.cfg.num_views_used]
 
         for view_id in view_ids:
