@@ -41,11 +41,11 @@ class ObjaverseDataset(Dataset):
 
         # naive split
         if self.type == 'val':
-            self.items = self.items[-self.cfg.val_size:]
+            self.items = self.items[-self.cfg.val_size * len(self.items):]
         elif self.type == 'test':
-            self.items = self.items[-(self.cfg.val_size + self.cfg.test_size):-self.cfg.val_size]
+            self.items = self.items[-(self.cfg.val_size + self.cfg.test_size) * len(self.items):-self.cfg.val_size * len(self.items)]
         else:
-            self.items = self.items[:self.cfg.train_size]
+            self.items = self.items[:self.cfg.train_size * len(self.items)]
 
         # default camera intrinsics
         self.tan_half_fovy = np.tan(np.deg2rad(self.cfg.fovy / 2))
@@ -56,14 +56,12 @@ class ObjaverseDataset(Dataset):
         self.projection_matrix[3, 2] = - (self.cfg.zfar * self.cfg.znear) / (self.cfg.zfar - self.cfg.znear)
         self.projection_matrix[2, 3] = 1
 
-        # distribution for sampling views
-        shape_k = 3.27           # Shape parameter (affects skewness)
-        scale_theta = 3.4       # Scale parameter (affects spread)
-        self.range = np.arange(1, 26)
-
-        self.pdf = gamma.pdf(self.range, a=shape_k, scale=scale_theta)
-        self.pdf[:3] = 0
-        self.pdf = self.pdf / self.pdf.sum()
+        self.input_view_ids = [0, 2, 4, 6,         # L1
+                               9, 11, 13, 15,      # L2
+                                                   # L3
+                               24,]                # L4
+        
+        self.test_view_ids = [i for i in range(cfg.num_views_total) if i not in self.input_view_ids]
 
     def __len__(self):
         return len(self.items)
@@ -83,16 +81,13 @@ class ObjaverseDataset(Dataset):
         uid = self.items[idx]
         results = {}
 
-        # number of input images
-        number_of_input_views = np.random.choice(self.range, p=self.pdf)
-        results['number_of_input_views'] = number_of_input_views
-
         # load num_views images
         images = []
         masks = []
         cam_poses = []
         
-        view_ids = np.random.permutation(np.arange(0, 25))
+        view_ids = np.array(self.input_view_ids) + np.random.permutation(self.test_view_ids)
+        view_ids = view_ids[:self.cfg.num_views_used]
 
         for view_id in view_ids:
         
@@ -129,10 +124,10 @@ class ObjaverseDataset(Dataset):
 
         
         view_cnt = len(images)
-        if view_cnt < self.cfg.num_views:
+        if view_cnt < self.cfg.num_views_used:
             print(f'[WARN] dataset {uid}: not enough valid views, only {view_cnt} views found!')
             # Padding to be enough views
-            n = self.cfg.num_views - view_cnt
+            n = self.cfg.num_views_used - view_cnt
             images = images + [images[-1]] * n
             masks = masks + [masks[-1]] * n
             cam_poses = cam_poses + [cam_poses[-1]] * n
@@ -146,13 +141,13 @@ class ObjaverseDataset(Dataset):
         cam_poses = transform.unsqueeze(0) @ cam_poses  # [V, 4, 4]
 
         # resize input images
-        images_input = F.interpolate(images[:number_of_input_views].clone(), size=(self.cfg.input_size, self.cfg.input_size), mode='bilinear', align_corners=False)   # [V, C, H, W]
-        cam_poses_input = cam_poses[:number_of_input_views].clone()
+        images_input = F.interpolate(images[:len(self.input_view_ids)].clone(), size=(self.cfg.input_size, self.cfg.input_size), mode='bilinear', align_corners=False)   # [V, C, H, W]
+        cam_poses_input = cam_poses[:len(self.input_view_ids)].clone()
         
         # data augmentation
         if self.type == 'train':
-            if random.random() < self.cfg.prob_grid_distortion:
-                images_input[1:] = grid_distortion(images_input[1:])
+            # if random.random() < self.cfg.prob_grid_distortion:
+            #     images_input[1:] = grid_distortion(images_input[1:])
             if random.random() < self.cfg.prob_cam_jitter:
                 cam_poses_input[1:] = orbit_camera_jitter(cam_poses_input[1:])
 
@@ -160,27 +155,16 @@ class ObjaverseDataset(Dataset):
 
         # build rays for input views
         rays_embeddings = []
-        for i in range(number_of_input_views):
+        for i in range(len(self.input_view_ids)):
             rays_o, rays_d = get_rays(cam_poses_input[i], self.cfg.input_size, self.cfg.input_size, self.cfg.fovy) # [h, w, 3]
             rays_plucker = torch.cat([torch.cross(rays_o, rays_d, dim=-1), rays_d], dim=-1) # [h, w, 6]
             rays_embeddings.append(rays_plucker)
 
-        rays_embeddings = torch.stack(rays_embeddings, dim=0).permute(0, 3, 1, 2).contiguous() # [V, 6, h, w]
-        final_input = torch.cat([images_input, rays_embeddings], dim=1) # [V=4, 9, H, W]
+        rays_embeddings = torch.stack(rays_embeddings, dim=0).permute(0, 3, 1, 2).contiguous() # [V=9, 6, h, w]
+        final_input = torch.cat([images_input, rays_embeddings], dim=1) # [V=9, 9, H, W]
 
-        repeats = self.cfg.num_views // number_of_input_views
-        remainder = self.cfg.num_views % number_of_input_views
-        padded_final_input = final_input.repeat(repeats, 1, 1, 1)
-        padded_cam_poses_input = cam_poses_input.repeat(repeats, 1, 1)
-        
-
-        if remainder > 0:
-            padded_final_input = torch.cat([padded_final_input, final_input[:remainder]], dim=0)
-            padded_cam_poses_input = torch.cat([padded_cam_poses_input, cam_poses_input[:remainder]], dim=0)
-        
-
-        results['input'] = padded_final_input
-        results['cam_poses_input'] = padded_cam_poses_input
+        results['input'] = final_input
+        results['cam_poses_input'] = cam_poses_input
 
         # resize ground-truth images, still in range [0, 1]
         results['images_output'] = F.interpolate(images, (self.cfg.output_size, self.cfg.output_size), mode='bilinear', align_corners=False)
@@ -190,7 +174,7 @@ class ObjaverseDataset(Dataset):
         cam_poses[:, :3, 1:3] *= -1 # invert up & forward direction
 
         # cameras needed by gaussian rasterizer
-        cam_view = torch.inverse(cam_poses).transpose(1, 2)     # World-to-camera matrix: [V, 4, 4]
+        cam_view = torch.inverse(cam_poses).transpose(1, 2)     # World-to-camera matrix: [V, 4, 4] (row-vector)
         cam_view_proj = cam_view @ self.projection_matrix     # world-to-clip matrix: [V, 4, 4]
         cam_pos = - cam_poses[:, :3, 3] # [V, 3]
         
@@ -200,7 +184,6 @@ class ObjaverseDataset(Dataset):
 
         # results = {
         #     [C, H, W]
-        #     'number_of_input_views': ....
         #     'input': ...,             (processed input images 25x9x256x256)
         #     'cam_poses_input': ...,   
         #     'images_output': ...,     (25x3x512x512)

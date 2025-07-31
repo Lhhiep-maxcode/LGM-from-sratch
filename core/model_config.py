@@ -19,9 +19,9 @@ class Options:
     output_size: int = 256
 
     ### DATASET
-    train_size: int = 64000
-    test_size: int = 8000
-    val_size: int = 8000
+    train_size: float = 0.8
+    test_size: float = 0.1
+    val_size: float = 0.1
     data_path: str = '/kaggle/input/objaverse-subset'
     # data mode (only support s3 now)   ---> CHUA HIEU
     data_mode: Literal['s3'] = 's3'
@@ -31,8 +31,10 @@ class Options:
     znear: float = 0.5
     # camera far plane (for clipping)   
     zfar: float = 2.5
-    # number of all views (input + output)
-    num_views: int = 25
+    # number of total views
+    num_views_total: int = 25
+    # number of (input + test) views
+    num_views_used: int = 13
     # camera radius (radius of camera orbitting around object)   ---> CHUA HIEU
     cam_radius: float = 1.5 # to better use [-1, 1]^3 space
     # num workers
