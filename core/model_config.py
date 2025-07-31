@@ -94,7 +94,6 @@ config_defaults['tiny'] = Options(
     splat_size=64,
     output_size=256,
     batch_size=16,
-    num_views=25,
     gradient_accumulation_steps=1,
     mixed_precision='bf16',
 )
@@ -109,7 +108,6 @@ config_defaults['small'] = Options(
     splat_size=64,
     output_size=256,
     batch_size=8,
-    num_views=25,
     gradient_accumulation_steps=1,
     mixed_precision='bf16',
 )
@@ -124,7 +122,6 @@ config_defaults['big'] = Options(
     splat_size=128,
     output_size=512, # render & supervise Gaussians at a higher resolution.
     batch_size=8,
-    num_views=25,
     gradient_accumulation_steps=1,
     mixed_precision='bf16',
 )
