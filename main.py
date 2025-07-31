@@ -4,7 +4,7 @@ from core.model import LGM
 from accelerate import Accelerator
 from safetensors.torch import load_file
 from core.dataset import ObjaverseDataset as Dataset
-
+from tqdm.auto import tqdm
 
 import torch
 import tyro
@@ -98,6 +98,11 @@ def main():
         model.train()
         total_loss = 0
         total_psnr = 0
+        # Create tqdm only on main process
+        if accelerator.is_local_main_process:
+            pbar = tqdm(total=len(train_dataloader), desc=f"Epoch {epoch+1}/{cfg.num_epochs}")
+            
+
         for i, data in enumerate(train_dataloader):
             with accelerator.accumulate(model):
                 # Accumulate to simulate large batch training
@@ -123,6 +128,13 @@ def main():
                 total_psnr += psnr.detach()
 
             if accelerator.is_main_process:
+                pbar.update(1)
+                pbar.set_postfix({
+                    "loss": loss.item(),
+                    "psnr": psnr.item(),
+                    "lr": scheduler.get_last_lr()[0]
+                })
+
                 # logging
                 if i % 100 == 0:
                     mem_free, mem_total = torch.cuda.mem_get_info()
@@ -156,6 +168,10 @@ def main():
         with torch.no_grad():
             model.eval()
             total_psnr = 0
+            # Create tqdm only on main process
+            if accelerator.is_local_main_process:
+                pbar2 = tqdm(test_dataloader, desc=f"[Eval] Epoch {epoch+1}")
+
             for i, data in enumerate(test_dataloader):
                 out = model(data)
 
@@ -163,13 +179,14 @@ def main():
                 total_psnr += psnr.detach()
 
                 if accelerator.is_main_process:
-                    gt_images = data['images_output'].detach().cpu().numpy()    # [B, V, 3, output_size, output_size]
-                    gt_images = gt_images.transpose(0, 3, 1, 4, 2).reshape(-1, gt_images.shape[1] * gt_images.shape[3], 3)
-                    kiui.utils.write_image(f'{cfg.workspace}/{epoch}_{i}_eval_gt_images.jpg', gt_images)
+                    pbar2.update(1)
+                    # gt_images = data['images_output'].detach().cpu().numpy()    # [B, V, 3, output_size, output_size]
+                    # gt_images = gt_images.transpose(0, 3, 1, 4, 2).reshape(-1, gt_images.shape[1] * gt_images.shape[3], 3)
+                    # kiui.utils.write_image(f'{cfg.workspace}/{epoch}_{i}_eval_gt_images.jpg', gt_images)
 
-                    pred_images = out['images_pred'].detach().cpu().numpy()     # [B, V, 3, output_size, output_size]
-                    pred_images = pred_images.transpose(0, 3, 1, 4, 2).reshape(-1, pred_images.shape[1] * gt_images.shape[3], 3)
-                    kiui.utils.write_image(f'{cfg.workspace}/{epoch}_{i}_eval_pred_images.jpg', pred_images)
+                    # pred_images = out['images_pred'].detach().cpu().numpy()     # [B, V, 3, output_size, output_size]
+                    # pred_images = pred_images.transpose(0, 3, 1, 4, 2).reshape(-1, pred_images.shape[1] * gt_images.shape[3], 3)
+                    # kiui.utils.write_image(f'{cfg.workspace}/{epoch}_{i}_eval_pred_images.jpg', pred_images)
 
             torch.cuda.empty_cache()
 
