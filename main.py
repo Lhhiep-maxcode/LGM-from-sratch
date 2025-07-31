@@ -107,8 +107,8 @@ def main():
                     # gradient clipping to avoid exploding gradients
                     accelerator.clip_grad_norm_(model.parameters(), cfg.gradient_clip)
 
-                    optimizer.step()
-                    scheduler.step()
+                optimizer.step()
+                scheduler.step()
 
                 total_loss += loss.detach()
                 total_psnr += psnr.detach()
