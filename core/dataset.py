@@ -57,7 +57,7 @@ class ObjaverseDataset(Dataset):
         self.projection_matrix[2, 3] = 1
 
         self.input_view_ids = [0, 2, 4, 6,         # L1
-                               9, 11, 13, 15,      # L2
+                                                   # L2
                                                    # L3
                                24,]                # L4
         

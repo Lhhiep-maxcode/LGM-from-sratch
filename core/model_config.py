@@ -34,7 +34,7 @@ class Options:
     # number of total views
     num_views_total: int = 25
     # number of (input + test) views
-    num_views_used: int = 13
+    num_views_used: int = 9
     # camera radius (radius of camera orbitting around object)   ---> CHUA HIEU
     cam_radius: float = 1.5 # to better use [-1, 1]^3 space
     # num workers
