@@ -23,7 +23,7 @@ class MVAttention(nn.Module):
         eps: float = 1e-5,
         residual: bool = True,
         skip_scale: float = 1,
-        num_frames: int = 5,
+        num_frames: int = 13,
     ):
         super().__init__()
 

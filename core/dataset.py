@@ -64,7 +64,7 @@ class ObjaverseDataset(Dataset):
 
         self.input_view_ids = [0, 2, 4, 6,          # L1
                                9, 11, 13, 15,       # L2
-                                16, 18, 20, 22,     # L3    
+                               16, 18, 20, 22,      # L3    
                                24]                  # L4
         
         self.test_view_ids = [i for i in range(cfg.num_views_total) if i not in self.input_view_ids]
@@ -164,6 +164,8 @@ class ObjaverseDataset(Dataset):
         images_input = TF.normalize(images_input, IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD)
 
         # build rays for input views (Plucker Embedding)
+        # just build rays for number of input_view_ids
+        # other random_view = (num_views_used - input_view_ids) used for supervision, which not in results['input']
         rays_embeddings = []
         for i in range(len(self.input_view_ids)):
             rays_o, rays_d = get_rays(cam_poses_input[i], self.cfg.input_size, self.cfg.input_size, self.cfg.fovy) # [h, w, 3]
@@ -171,8 +173,8 @@ class ObjaverseDataset(Dataset):
             rays_plucker = torch.cat([torch.cross(rays_o, rays_d, dim=-1), rays_d], dim=-1) # [h, w, 6]
             rays_embeddings.append(rays_plucker)
 
-        rays_embeddings = torch.stack(rays_embeddings, dim=0).permute(0, 3, 1, 2).contiguous() # [V=9, 6, h, w]
-        final_input = torch.cat([images_input, rays_embeddings], dim=1) # [V=9, 9, H, W]
+        rays_embeddings = torch.stack(rays_embeddings, dim=0).permute(0, 3, 1, 2).contiguous() # [V, 6, h, w]
+        final_input = torch.cat([images_input, rays_embeddings], dim=1) # [V, 9, H, W]
 
         results['input'] = final_input
         results['cam_poses_input'] = cam_poses_input
@@ -195,9 +197,9 @@ class ObjaverseDataset(Dataset):
 
         # results = {
         #     [C, H, W]
-        #     'input': ...,             (processed input images 25x9x256x256)
+        #     'input': ...,             (processed input images (13x9x256x256)) (With 4441, input_view_ids = 13, num_views_used = 17)
         #     'cam_poses_input': ...,   
-        #     'images_output': ...,     (25x3x512x512)
+        #     'images_output': ...,     (17x3x512x512)
         #     'masks_output': ...,      (.......)
         #     'cam_view': ...,          (colmap coordinate)
         #     'cam_view_proj': ...,     (colmap coordinate)

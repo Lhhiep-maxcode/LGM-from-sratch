@@ -1,5 +1,16 @@
 # main.py
 
+# Pipeline for core: 
+# 1. Prepare everything in model_config.py
+# 2. Fix data in dataset.py (13 input, 4 test), return a dictionary 'results'
+# 3. Predict 3D presentation in model.py
+#   - LGM.forward take 'results' in step 2
+#   - Continue to LGM.forward_gaussians
+#   - Then pass into the unet
+#   - Return [B, N, 14], which N is the number of Gaussian points, with 14 parameters each
+#   - Now we have a 3D representation
+# 4. Render and calculate LPIPS loss
+
 import kiui.vis
 import torch
 import torch.nn as nn
@@ -35,7 +46,7 @@ class LGM(nn.Module):
         # Gaussian Renderer
         self.gs = GaussianRenderer(cfg)
 
-        # activations, so it must be appropiate
+        # activations, so it must be appropiate with the scale of each element
         self.pos_act = lambda x: x.clamp(-1, 1)     # Dense Gaussians
         self.scale_act = lambda x: 0.1 * F.softplus(x)
         self.opacity_act = lambda x: torch.sigmoid(x)
@@ -43,6 +54,7 @@ class LGM(nn.Module):
         self.rgb_act = lambda x: 0.5 * torch.tanh(x) + 0.5 # NOTE: may use sigmoid if train again
 
         # LPIPS loss
+        # lambda_lpips used to balance between mse and lpips
         if self.cfg.lambda_lpips > 0:
             self.lpips_loss = LPIPS(net='vgg')
             self.lpips_loss.requires_grad_(False)
@@ -56,44 +68,45 @@ class LGM(nn.Module):
                 del state_dict[k]
         return state_dict
     
-    def prepare_default_rays(self, device, elevation=0):
-        # prepare Plucker embedding for 4 input images
+    # def prepare_default_rays(self, device, elevation=0):
+    #     # prepare Plucker embedding for 4 input images
 
-        from kiui.cam import orbit_camera
-        from core.utils import get_rays
+    #     from kiui.cam import orbit_camera
+    #     from core.utils import get_rays
 
-        cam_poses = np.stack([
-            orbit_camera(elevation, 0, radius=self.cfg.cam_radius),
-            orbit_camera(elevation, 90, radius=self.cfg.cam_radius),
-            orbit_camera(elevation, 180, radius=self.cfg.cam_radius),
-            orbit_camera(elevation, 270, radius=self.cfg.cam_radius),
-        ], axis=0) # [4, 4, 4]
-        cam_poses = torch.from_numpy(cam_poses)
+    #     cam_poses = np.stack([
+    #         orbit_camera(elevation, 0, radius=self.cfg.cam_radius),
+    #         orbit_camera(elevation, 90, radius=self.cfg.cam_radius),
+    #         orbit_camera(elevation, 180, radius=self.cfg.cam_radius),
+    #         orbit_camera(elevation, 270, radius=self.cfg.cam_radius),
+    #     ], axis=0) # [4, 4, 4]
+    #     cam_poses = torch.from_numpy(cam_poses)
 
-        rays_embeddings = []
-        for i in range(cam_poses.shape[0]):
-            rays_o, rays_d = get_rays(cam_poses[i], self.cfg.input_size, self.cfg.input_size, self.cfg.fovy) # [h, w, 3]
-            rays_plucker = torch.cat([torch.cross(rays_o, rays_d, dim=-1), rays_d], dim=-1) # [h, w, 6]
-            rays_embeddings.append(rays_plucker)
+    #     rays_embeddings = []
+    #     for i in range(cam_poses.shape[0]):
+    #         rays_o, rays_d = get_rays(cam_poses[i], self.cfg.input_size, self.cfg.input_size, self.cfg.fovy) # [h, w, 3]
+    #         rays_plucker = torch.cat([torch.cross(rays_o, rays_d, dim=-1), rays_d], dim=-1) # [h, w, 6]
+    #         rays_embeddings.append(rays_plucker)
 
-            ## visualize rays for plotting figure
-            # kiui.vis.plot_image(rays_d * 0.5 + 0.5, save=True)
+    #         ## visualize rays for plotting figure
+    #         # kiui.vis.plot_image(rays_d * 0.5 + 0.5, save=True)
 
-        rays_embeddings = torch.stack(rays_embeddings, dim=0).permute(0, 3, 1, 2).contiguous().to(device) # [V, 6, h, w]
+    #     rays_embeddings = torch.stack(rays_embeddings, dim=0).permute(0, 3, 1, 2).contiguous().to(device) # [V, 6, h, w]
         
-        return rays_embeddings
+    #     return rays_embeddings
     
+
     def forward_gaussians(self, images):
-        # images: [B, 4, 9, H, W]
+        # images: [B, 13, 9, H, W]
         # return: Gaussians: [B, num_gauss * 14]
 
         B, V, C, H, W = images.shape
         images = images.view(B*V, C, H, W)
 
-        x = self.unet(images)   # [B*4, 14, H, W]
-        x = self.conv(x)        # [B*4, 14, H, W]
+        x = self.unet(images)   # [B*13, 14, H, W]
+        x = self.conv(x)        # [B*13, 14, H, W]
 
-        x = x.reshape(B, 4, 14, self.cfg.splat_size, self.cfg.splat_size)
+        x = x.reshape(B, 13, 14, self.cfg.splat_size, self.cfg.splat_size)
         
         # # visualize multi-view gaussian features for plotting figure
         # tmp_alpha = self.opacity_act(x[0, :, 3:4])
@@ -102,7 +115,7 @@ class LGM(nn.Module):
         # kiui.vis.plot_image(tmp_img_rgb, save=True)
         # kiui.vis.plot_image(tmp_img_pos, save=True)
 
-        x = x.permute(0, 1, 3, 4, 2).reshape(B, -1, 14)    # [B, 4, splat_size, splat_size, 14] --> [B, N, 14]
+        x = x.permute(0, 1, 3, 4, 2).reshape(B, -1, 14)    # [B, 13, splat_size, splat_size, 14] --> [B, N, 14]
         
         pos = self.pos_act(x[..., 0:3])     # [B, N, 3]
         opacity = self.opacity_act(x[..., 3:4]) # [B, N, 1]
@@ -118,15 +131,15 @@ class LGM(nn.Module):
         # data = {
         #     [C, H, W]
         #     'number_of_input_views': ....
-        #     'input': ...,             (processed input images 25x9x256x256)
+        #     'input': ...,             (processed input images 13x9x256x256)
         #     'cam_poses_input': ...,   
-        #     'images_output': ...,     (25x3x512x512)
+        #     'images_output': ...,     (17x3x512x512)
         #     'masks_output': ...,      (.......)
         #     'cam_view': ...,          (colmap coordinate)
         #     'cam_view_proj': ...,     (colmap coordinate)
         #     'cam_pos': ...,           (colmap coordinate)
         # }
-        # ------------
+        # -------------------------------------------------------------------------
         # return: results = {
         #     'gaussians': ...,
         #     'images_pred': ...,
@@ -140,7 +153,7 @@ class LGM(nn.Module):
         results = {}
         loss = 0
 
-        images = data['input'][:, :4]  # [B, 4, 9, H, W], input features (not necessarily orthogonal)
+        images = data['input']  # [B, 13, 9, H, W], input features (not necessarily orthogonal)
 
         # predicting 3DGS representation
         gaussians = self.forward_gaussians(images)  # [B, N, 14]
@@ -166,7 +179,8 @@ class LGM(nn.Module):
         loss_mse = F.mse_loss(pred_images, gt_images) + F.mse_loss(pred_alphas, gt_masks)
         results['loss_mse'] = loss_mse
         loss = loss + loss_mse
-
+        
+        # Above is just MSE, we will use LPIPS - Learned Perceptual Image Patch Similarity
         if self.cfg.lambda_lpips > 0:
             loss_lpips = self.lpips_loss(
                 # Rescale value from [0, 1] to [-1, -1] and resize to 256 to save memory cost
@@ -181,6 +195,7 @@ class LGM(nn.Module):
         # metric
         with torch.no_grad():
             mse = torch.mean((pred_images.detach() - gt_images) ** 2)
+            # Peak Signal-to-Noise Ratio, the higher the psnr, the higher the quality of the image
             psnr = -10 * torch.log10(mse)
             results['psnr'] = psnr
 

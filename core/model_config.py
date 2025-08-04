@@ -11,8 +11,8 @@ class Options:
     down_channels: Tuple[int, ...] = (64, 128, 256, 512, 1024, 1024)
     down_attention: Tuple[bool, ...] = (False, False, False, True, True, True)
     mid_attention: bool = True
-    up_channels: Tuple[int, ...] = (1024, 1024, 512, 256)
-    up_attention: Tuple[bool, ...] = (True, True, True, False)
+    up_channels: Tuple[int, ...] = (1024, 1024, 512, 256, 128)
+    up_attention: Tuple[bool, ...] = (True, True, True, False, False)
     # Unet output size, dependent on the input_size and U-Net structure!
     splat_size: int = 64
     # gaussian render size
