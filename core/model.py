@@ -184,4 +184,4 @@ class LGM(nn.Module):
             psnr = -10 * torch.log10(mse)
             results['psnr'] = psnr
 
-        return results
+        return results 
