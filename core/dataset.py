@@ -39,7 +39,7 @@ class ObjaverseDataset(Dataset):
         self.items = [name for name in os.listdir(data_path)
                       if os.path.isdir(os.path.join(data_path, name))]
 
-        # naive split
+        # naive split, no shuffle
         if self.type == 'val':
             self.items = self.items[-int(self.cfg.val_size * len(self.items)):]
         elif self.type == 'test':
@@ -48,6 +48,12 @@ class ObjaverseDataset(Dataset):
             self.items = self.items[:int(self.cfg.train_size * len(self.items))]
 
         # default camera intrinsics
+        # this matrix simulate the camera lens, transforming the 3D space of the camera into 2D space on the screen.
+        # [ S_x  0  | A_x  0 ]
+        # [  0  S_y | A_y  0 ]
+        # [---------+-------]
+        # [  0   0  |  A   B ]
+        # [  0   0  |  1  0 ] 
         self.tan_half_fovy = np.tan(np.deg2rad(self.cfg.fovy / 2))
         self.projection_matrix = torch.zeros(4, 4, dtype=torch.float32)
         self.projection_matrix[0, 0] = 1 / self.tan_half_fovy
@@ -56,10 +62,10 @@ class ObjaverseDataset(Dataset):
         self.projection_matrix[3, 2] = - (self.cfg.zfar * self.cfg.znear) / (self.cfg.zfar - self.cfg.znear)
         self.projection_matrix[2, 3] = 1
 
-        self.input_view_ids = [0, 2, 4, 6,         # L1
-                                                   # L2
-                                                   # L3
-                               24,]                # L4
+        self.input_view_ids = [0, 2, 4, 6,          # L1
+                               9, 11, 13, 15,       # L2
+                                16, 18, 20, 22,     # L3    
+                               24]                  # L4
         
         self.test_view_ids = [i for i in range(cfg.num_views_total) if i not in self.input_view_ids]
 
@@ -110,11 +116,12 @@ class ObjaverseDataset(Dataset):
                 continue
 
             # scale up radius to make model make scale predictions
+            # radius is the distance from camera to the center of world
             c2w[:3, 3] *= self.cfg.cam_radius / 1.5 # 1.5 is the default scale of the dataset
         
             # Background removing
             image = image.permute(2, 0, 1) # [4, 512, 512]
-            mask = image[3:4] # [1, 512, 512]
+            mask = image[3:4] # [1, 512, 512], which is alpha channel
             image = image[:3] * mask + (1 - mask) # [3, 512, 512], to white bg
             image = image[[2,1,0]].contiguous() # bgr to rgb
 
@@ -136,8 +143,10 @@ class ObjaverseDataset(Dataset):
         masks = torch.stack(masks, dim=0)       # [V, H, W]
         cam_poses = torch.stack(cam_poses, dim=0)  # [V, 4, 4]
 
-        # normalized camera feats as in paper (transform the first pose to a fixed position)
+        # normalized camera feats as in paper 
+        # transform the first pose to a fixed position
         transform = torch.tensor([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, self.cfg.cam_radius], [0, 0, 0, 1]], dtype=torch.float32) @ torch.inverse(cam_poses[0])
+        # transform other cameras
         cam_poses = transform.unsqueeze(0) @ cam_poses  # [V, 4, 4]
 
         # resize input images
@@ -151,12 +160,14 @@ class ObjaverseDataset(Dataset):
             if random.random() < self.cfg.prob_cam_jitter:
                 cam_poses_input[1:] = orbit_camera_jitter(cam_poses_input[1:])
 
+        # Normalize, adapt to pretrain model
         images_input = TF.normalize(images_input, IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD)
 
-        # build rays for input views
+        # build rays for input views (Plucker Embedding)
         rays_embeddings = []
         for i in range(len(self.input_view_ids)):
             rays_o, rays_d = get_rays(cam_poses_input[i], self.cfg.input_size, self.cfg.input_size, self.cfg.fovy) # [h, w, 3]
+            # cross product of 2 rays, create moment of rays
             rays_plucker = torch.cat([torch.cross(rays_o, rays_d, dim=-1), rays_d], dim=-1) # [h, w, 6]
             rays_embeddings.append(rays_plucker)
 

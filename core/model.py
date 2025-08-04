@@ -35,7 +35,7 @@ class LGM(nn.Module):
         # Gaussian Renderer
         self.gs = GaussianRenderer(cfg)
 
-        # activations...
+        # activations, so it must be appropiate
         self.pos_act = lambda x: x.clamp(-1, 1)     # Dense Gaussians
         self.scale_act = lambda x: 0.1 * F.softplus(x)
         self.opacity_act = lambda x: torch.sigmoid(x)
@@ -48,10 +48,11 @@ class LGM(nn.Module):
             self.lpips_loss.requires_grad_(False)
 
     def state_dict(self, **kwargs):
-        # remove lpips_loss
+        # remove lpips_loss, since this one is just used to calculate loss, not for training
+        # 
         state_dict = super().state_dict(**kwargs)
         for k in list(state_dict.keys()):
-            if 'lpips_loss' in k:
+            if 'lpips_loss' in k: 
                 del state_dict[k]
         return state_dict
     
