@@ -106,6 +106,7 @@ class ObjaverseDataset(Dataset):
                     # OpenGL camera matrix: [4, 4]
                     c2w = torch.tensor([list(map(float, line.strip().split())) for line in lines]).reshape(4, 4)
             except Exception as e:
+                print(f"Failed to load view id {view_id}:", e)
                 # print(f'[WARN] dataset {uid} {vid}: {e}')
                 continue
 
