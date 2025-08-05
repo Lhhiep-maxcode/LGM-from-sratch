@@ -1,3 +1,5 @@
+# Training LGM here
+
 import kiui.utils
 from core.model_config import AllConfigs, Options
 from core.model import LGM
@@ -30,6 +32,7 @@ def main():
         
         # tolerant load (only load matching shapes)
         # model.load_state_dict(ckpt, strict=False)
+        # used when change the model and load part that unchanged
         state_dict = model.state_dict()
         for k, v in ckpt.items():
             if k in state_dict: 
@@ -74,12 +77,13 @@ def main():
     optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.lr, weight_decay=0.05, betas=(0.9, 0.95))
 
     # TODO: can consider to tuning the pct_start
-    # scheduler (per-iteration)
+    # scheduler (per-iteration), to change the learning rate
     # consider to use ConsineAnnealingWarmRestart to escape local
     # scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=3000, eta_min=1e-6)
     total_steps = cfg.num_epochs * len(train_dataloader)
     pct_start = 3000 / total_steps
-    # Warm up + CosineAnnealingLR
+    # OneCycleLR = Warm up + CosineAnnealingLR
+    # tăng dần learning rate trong giai đoạn warm-up, sau đó giảm dần theo đường cong cosine cho đến hết quá trình huấn luyện
     scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=cfg.lr, total_steps=total_steps, pct_start=pct_start)
 
     # accelerate
@@ -92,6 +96,8 @@ def main():
         # Continue training by loading all state of optimizer, model, scheduler
         accelerator.load_state(cfg.resume)
 
+    # Peak Signal-to-Noise Ratio, the higher the psnr, the higher the quality of the image
+    # Save the best psnr, which mean the best model
     best_psnr_eval = 0
 
     for epoch in range(cfg.num_epochs):
@@ -104,8 +110,9 @@ def main():
             
 
         for i, data in enumerate(train_dataloader):
+            # Accumulate to simulate large batch training
+            # by calculate gradient of a lot of small batch before update 1 time
             with accelerator.accumulate(model):
-                # Accumulate to simulate large batch training
                 optimizer.zero_grad()
 
                 step_ratio = (epoch + i / len(train_dataloader)) / cfg.num_epochs
@@ -151,7 +158,7 @@ def main():
                     pred_images = pred_images.transpose(0, 3, 1, 4, 2).reshape(-1, pred_images.shape[1] * pred_images.shape[3], 3)  # [B * output_size, V * output_size, 3]
                     kiui.write_image(f'{cfg.workspace}/{epoch}_{i}_train_pred_images.jpg', pred_images)
 
-        total_loss = accelerator.gather_for_metrics(total_loss).mean()  # calculate avg loss for 1 gpu: [loss_gpu1, loss_gpu2, ...] -> [loss_gpu_avg]
+        total_loss = accelerator.gather_for_metrics(total_loss).mean()  # calculate avg loss for all gpu: [loss_gpu1, loss_gpu2, ...] -> [loss_gpu_avg]
         total_psnr = accelerator.gather_for_metrics(total_psnr).mean()
 
         if accelerator.is_main_process:
@@ -161,7 +168,7 @@ def main():
 
         # checkpoint
         if (epoch + 1) % 5 == 0 or epoch == cfg.num_epochs - 1:
-            accelerator.wait_for_everyone()
+            accelerator.wait_for_everyone() #all gpu wait until all run until here
             accelerator.save_state(output_dir=f'{cfg.workspace}/lastest')
 
         # eval

@@ -108,7 +108,10 @@ class GaussianRenderer:
             "alpha": alphas, # [B, V, 1, H, W]
         }
 
+
+
     def save_ply(self, gaussians: torch.Tensor, path, compatible=True):
+        "Save into a .ply file"
         # Target Gaussians example:
         # ------------------------------
         # property float x
@@ -177,8 +180,10 @@ class GaussianRenderer:
 
         PlyData([el]).write(path)
     
-    def load_ply(self, path, compatible=True):
 
+
+    def load_ply(self, path, compatible=True):
+        "load .ply file"
         from plyfile import PlyData, PlyElement
 
         plydata = PlyData.read(path)

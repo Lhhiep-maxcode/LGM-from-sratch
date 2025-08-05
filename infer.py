@@ -1,3 +1,6 @@
+# This file is currently for 4 pictures
+# For inference, not training
+# From a 2D image only, create 3D Gausian Splatting, and finally create a video 360 degree
 import tyro
 import torch
 import numpy as np
@@ -31,6 +34,7 @@ if cfg.resume is not None:
         ckpt = load_file(cfg.resume, device='cpu')
     else:
         ckpt = torch.load(cfg.resume, map_location='cpu')
+    # strict=False,still load when key and model not the same completely
     model.load_state_dict(ckpt, strict=False)
     print(f'[INFO] Loaded checkpoint from {cfg.resume}')
 else:
@@ -62,7 +66,7 @@ pipe = MVDreamPipeline.from_pretrained(
 )
 pipe = pipe.to(device)
 
-# load rembg
+# load rembg, a library to split object with bg
 bg_remover = rembg.new_session()
 
 # process function
@@ -75,6 +79,7 @@ def process(cfg: Options, path):
 
     # bg removal
     carved_image = rembg.remove(input_image, session=bg_remover) # [H, W, 4]
+    # create mask base on alpha channel, pixel related to object is True, else is False
     mask = carved_image[..., -1] > 0
 
     # recenter
@@ -87,18 +92,20 @@ def process(cfg: Options, path):
     if image.shape[-1] == 4:
         image = image[..., :3] * image[..., 3:4] + (1 - image[..., 3:4])
 
+    # '' is prompt
     mv_image = pipe('', image, guidance_scale=5.0, num_inference_steps=30, elevation=0)
     # (0, 90, 180, 270)
     mv_image = np.stack([mv_image[1], mv_image[2], mv_image[3], mv_image[0]], axis=0) # [4, 256, 256, 3], float32
 
     # ========== GENERATE GAUSSIANS ==========
     input_image = torch.from_numpy(mv_image).permute(0, 3, 1, 2).float().to(device) # [4, 3, 256, 256]
-    input_image = F.interpolate(input_image, size=(cfg.input_size, cfg.input_size), mode='bilinear', align_corners=False)
+    input_image = F.interpolate(input_image, size=(cfg.input_size, cfg.input_size), mode='bilinear', align_corners=False) # make sure is 256x256
     input_image = TF.normalize(input_image, IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD)
 
     input_image = torch.cat([input_image, rays_embeddings], dim=1).unsqueeze(0) # [1, 4, 9, H, W]
 
     with torch.no_grad():
+        # mixed-precision for faster?
         with torch.autocast(device_type='cuda', dtype=torch.float16):
             # generate gaussians
             # Mặc dù model weights là float16, nhưng một số intermediate layer vẫn có khả năng dùng
@@ -112,6 +119,7 @@ def process(cfg: Options, path):
         images = []
         elevation = 0
 
+        # fancy video for 2 round vid(720 degree)
         if cfg.fancy_video:
             azimuth = np.arange(0, 720, 4, dtype=np.int32)
         else:
@@ -130,6 +138,7 @@ def process(cfg: Options, path):
             cam_view_proj = cam_view @ proj_matrix # [V, 4, 4] --- w2c2clip matrix  (OpenGL world -> COLMAP cam -> image)
             cam_pos = - cam_poses[:, :3, 3] # [V, 3]
 
+            # idk?
             if cfg.fancy_video:
                 scale = min(azi / 360, 1)
             else:
