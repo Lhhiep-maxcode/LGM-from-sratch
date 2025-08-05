@@ -185,9 +185,9 @@ class ObjaverseDataset(Dataset):
 
         # results = {
         #     [C, H, W]
-        #     'input': ...,             (processed input images 25x9x256x256)
+        #     'input': ...,             (processed input images 5x9x256x256)
         #     'cam_poses_input': ...,   
-        #     'images_output': ...,     (25x3x512x512)
+        #     'images_output': ...,     (9x3x512x512)
         #     'masks_output': ...,      (.......)
         #     'cam_view': ...,          (colmap coordinate)
         #     'cam_view_proj': ...,     (colmap coordinate)

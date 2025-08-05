@@ -83,14 +83,14 @@ class LGM(nn.Module):
         return rays_embeddings
     
     def forward_gaussians(self, images):
-        # images: [B, 4, 9, H, W]
+        # images: [B, 5, 9, H, W]
         # return: Gaussians: [B, num_gauss * 14]
 
         B, V, C, H, W = images.shape
         images = images.view(B*V, C, H, W)
 
-        x = self.unet(images)   # [B*4, 14, H, W]
-        x = self.conv(x)        # [B*4, 14, H, W]
+        x = self.unet(images)   # [B*5, 14, H, W]
+        x = self.conv(x)        # [B*5, 14, H, W]
 
         x = x.reshape(B, 4, 14, self.cfg.splat_size, self.cfg.splat_size)
         
@@ -116,10 +116,9 @@ class LGM(nn.Module):
         # data: output of the dataloader
         # data = {
         #     [C, H, W]
-        #     'number_of_input_views': ....
-        #     'input': ...,             (processed input images 25x9x256x256)
+        #     'input': ...,             (processed input images 5x9x256x256)
         #     'cam_poses_input': ...,   
-        #     'images_output': ...,     (25x3x512x512)
+        #     'images_output': ...,     (9x3x512x512)
         #     'masks_output': ...,      (.......)
         #     'cam_view': ...,          (colmap coordinate)
         #     'cam_view_proj': ...,     (colmap coordinate)
@@ -139,7 +138,7 @@ class LGM(nn.Module):
         results = {}
         loss = 0
 
-        images = data['input'][:, :4]  # [B, 4, 9, H, W], input features (not necessarily orthogonal)
+        images = data['input']  # [B, 5, 9, H, W], input features (not necessarily orthogonal)
 
         # predicting 3DGS representation
         gaussians = self.forward_gaussians(images)  # [B, N, 14]
