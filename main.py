@@ -1,4 +1,3 @@
-import kiui.utils
 from core.model_config import AllConfigs, Options
 from core.model import LGM
 from accelerate import Accelerator
@@ -101,7 +100,7 @@ def main():
         # Create tqdm only on main process
         if accelerator.is_main_process:
             print(f"----------Epoch {epoch + 1}----------")
-            pbar = tqdm(total=len(train_dataloader), desc=f"Epoch {epoch+1}/{cfg.num_epochs}")
+            pbar = tqdm(total=len(train_dataloader), desc=f"[TRAIN] Epoch {epoch+1}/{cfg.num_epochs}")
             
 
         for i, data in enumerate(train_dataloader):
@@ -131,14 +130,15 @@ def main():
             if accelerator.is_main_process:
                 pbar.update(1)
                 pbar.set_postfix({
-                    "loss": loss.detach(),
-                    "psnr": psnr.detach(),
+                    "loss": float(loss.detach()),
+                    "psnr": float(psnr.detach()),
                     "lr": scheduler.get_last_lr()[0]
                 })
 
                 # logging
                 if i % 100 == 0:
                     mem_free, mem_total = torch.cuda.mem_get_info()
+                    print()
                     print(f"[INFO] {i}/{len(train_dataloader)} mem: {(mem_total-mem_free)/1024**3:.2f}/{mem_total/1024**3:.2f}G lr: {scheduler.get_last_lr()[0]:.7f} step_ratio: {step_ratio:.4f} loss: {loss.item():.6f}")
                 
                 # save log images
@@ -153,14 +153,16 @@ def main():
                         pred_images = pred_images.transpose(0, 3, 1, 4, 2).reshape(-1, pred_images.shape[1] * pred_images.shape[3], 3)  # [B * output_size, V * output_size, 3]
                         kiui.write_image(f'{cfg.workspace}/{epoch}_{i}_train_pred_images.jpg', pred_images)
 
-        pbar.close()
+        if accelerator.is_main_process:
+            pbar.close()
+        
         total_loss = accelerator.gather_for_metrics(total_loss).mean()  # calculate avg loss for 1 gpu: [loss_gpu1, loss_gpu2, ...] -> [loss_gpu_avg]
         total_psnr = accelerator.gather_for_metrics(total_psnr).mean()
 
         if accelerator.is_main_process:
             total_loss /= len(train_dataloader)
             total_psnr /= len(train_dataloader)
-            accelerator.print(f"[TRAIN] Epoch: {epoch + 1} loss: {total_loss:.6f} psnr: {total_psnr():.4f}")
+            accelerator.print(f"[TRAIN] Epoch: {epoch + 1} loss: {total_loss:.6f} psnr: {total_psnr:.4f}")
 
         # checkpoint
         if (epoch + 1) % 5 == 0 or epoch == cfg.num_epochs - 1:
@@ -172,7 +174,7 @@ def main():
             model.eval()
             total_psnr = 0
             if accelerator.is_main_process:
-                pbar2 = tqdm(test_dataloader, desc=f"[EVAL] Epoch {epoch + 1}")
+                pbar2 = tqdm(test_dataloader, desc=f"[EVAL] Epoch {epoch + 1}/{cfg.num_epochs}")
 
             for i, data in enumerate(test_dataloader):
                 out = model(data)
@@ -190,7 +192,8 @@ def main():
                     # pred_images = pred_images.transpose(0, 3, 1, 4, 2).reshape(-1, pred_images.shape[1] * gt_images.shape[3], 3)
                     # kiui.utils.write_image(f'{cfg.workspace}/{epoch}_{i}_eval_pred_images.jpg', pred_images)
 
-            pbar2.close()
+            if accelerator.is_main_process:
+                pbar2.close()
             torch.cuda.empty_cache()
 
             total_psnr = accelerator.gather_for_metrics(total_psnr).mean()
@@ -198,7 +201,7 @@ def main():
                 total_psnr /= len(test_dataloader)
                 accelerator.print(f"[EVAL] epoch: {epoch + 1} psnr: {psnr:.4f}")
 
-            if total_psnr > best_psnr_eval:
+            if total_psnr > best_psnr_eval and accelerator.is_main_process:
                 best_psnr_eval = total_psnr
                 accelerator.wait_for_everyone()
                 print("Best found => Saving model....")
