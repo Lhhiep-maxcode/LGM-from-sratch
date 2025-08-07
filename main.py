@@ -100,7 +100,7 @@ def main():
         # Create tqdm only on main process
         if accelerator.is_main_process:
             print(f"----------Epoch {epoch + 1}----------")
-            pbar = tqdm(total=len(train_dataloader), desc=f"[TRAIN] Epoch {epoch+1}/{cfg.num_epochs}")
+            pbar = tqdm(total=len(train_dataloader), desc=f"[T] E{epoch+1}/{cfg.num_epochs}")
             
 
         for i, data in enumerate(train_dataloader):
@@ -131,10 +131,9 @@ def main():
                 pbar.update(1)
                 mem_free, mem_total = torch.cuda.mem_get_info()
                 pbar.set_postfix({
-                    "loss": float(loss.detach()),
+                    "ls": float(loss.detach()),
                     "psnr": float(psnr.detach()),
-                    "lr": scheduler.get_last_lr()[0],
-                    "vram": (mem_total-mem_free)/1024**3,
+                    "vr": round((mem_total-mem_free)/1024**3),
                 })
                 
                 # save log images
@@ -158,7 +157,7 @@ def main():
         if accelerator.is_main_process:
             total_loss /= len(train_dataloader)
             total_psnr /= len(train_dataloader)
-            accelerator.print(f"[TRAIN] Epoch: {epoch + 1} loss: {total_loss:.6f} psnr: {total_psnr:.4f}")
+            accelerator.print(f"[TRAIN INFO] Epoch: {epoch + 1} loss: {total_loss:.6f} psnr: {total_psnr:.4f}")
 
         # checkpoint
         if (epoch + 1) % 5 == 0 or epoch == cfg.num_epochs - 1:
@@ -170,7 +169,7 @@ def main():
             model.eval()
             total_psnr = 0
             if accelerator.is_main_process:
-                pbar2 = tqdm(test_dataloader, desc=f"[EVAL] Epoch {epoch + 1}/{cfg.num_epochs}")
+                pbar2 = tqdm(test_dataloader, desc=f"[E] E{epoch + 1}/{cfg.num_epochs}")
 
             for i, data in enumerate(test_dataloader):
                 out = model(data)
@@ -195,7 +194,7 @@ def main():
             total_psnr = accelerator.gather_for_metrics(total_psnr).mean()
             if accelerator.is_main_process:
                 total_psnr /= len(test_dataloader)
-                accelerator.print(f"[EVAL] epoch: {epoch + 1} psnr: {psnr:.4f}")
+                accelerator.print(f"[EVAL INFO] Epoch: {epoch + 1} psnr: {psnr:.4f}")
 
             if total_psnr > best_psnr_eval:
                 best_psnr_eval = total_psnr
