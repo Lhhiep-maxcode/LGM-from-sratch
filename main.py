@@ -129,17 +129,13 @@ def main():
 
             if accelerator.is_main_process:
                 pbar.update(1)
+                mem_free, mem_total = torch.cuda.mem_get_info()
                 pbar.set_postfix({
                     "loss": float(loss.detach()),
                     "psnr": float(psnr.detach()),
-                    "lr": scheduler.get_last_lr()[0]
+                    "lr": scheduler.get_last_lr()[0],
+                    "vram": (mem_total-mem_free)/1024**3,
                 })
-
-                # logging
-                if i % 100 == 0:
-                    mem_free, mem_total = torch.cuda.mem_get_info()
-                    print()
-                    print(f"[INFO] {i}/{len(train_dataloader)} mem: {(mem_total-mem_free)/1024**3:.2f}/{mem_total/1024**3:.2f}G lr: {scheduler.get_last_lr()[0]:.7f} step_ratio: {step_ratio:.4f} loss: {loss.item():.6f}")
                 
                 # save log images
                 if i % 500 == 0:
@@ -201,11 +197,12 @@ def main():
                 total_psnr /= len(test_dataloader)
                 accelerator.print(f"[EVAL] epoch: {epoch + 1} psnr: {psnr:.4f}")
 
-            if total_psnr > best_psnr_eval and accelerator.is_main_process:
+            if total_psnr > best_psnr_eval:
                 best_psnr_eval = total_psnr
                 accelerator.wait_for_everyone()
-                print("Best found => Saving model....")
-                accelerator.save_model(model, f'{cfg.workspace}/best')
+                if accelerator.is_main_process:
+                    accelerator.print("Best found => Saving model....")
+                    accelerator.save_model(model, f'{cfg.workspace}/best')
 
 
 if __name__ == "__main__":
