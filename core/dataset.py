@@ -48,10 +48,10 @@ class ObjaverseDataset(Dataset):
             self.items = self.items[:int(self.cfg.train_size * len(self.items))]
 
         # default camera intrinsics
-        self.tan_half_fovy = np.tan(np.deg2rad(self.cfg.fovy / 2))
+        self.tan_half_fov = np.tan(0.5 * np.deg2rad(self.cfg.fovy))
         self.projection_matrix = torch.zeros(4, 4, dtype=torch.float32)
-        self.projection_matrix[0, 0] = 1 / self.tan_half_fovy
-        self.projection_matrix[1, 1] = 1 / self.tan_half_fovy
+        self.projection_matrix[0, 0] = 1 / self.tan_half_fov
+        self.projection_matrix[1, 1] = 1 / self.tan_half_fov
         self.projection_matrix[2, 2] = (self.cfg.zfar + self.cfg.znear) / (self.cfg.zfar - self.cfg.znear)
         self.projection_matrix[3, 2] = - (self.cfg.zfar * self.cfg.znear) / (self.cfg.zfar - self.cfg.znear)
         self.projection_matrix[2, 3] = 1

@@ -162,14 +162,13 @@ class LGM(nn.Module):
         gt_images = gt_images * gt_masks + (1 - gt_masks) * bg_color.view(1, 1, 3, 1, 1)
 
         loss_mse = F.mse_loss(pred_images, gt_images) + F.mse_loss(pred_alphas, gt_masks)
-        results['loss_mse'] = loss_mse
         loss = loss + loss_mse
 
         if self.cfg.lambda_lpips > 0:
             loss_lpips = self.lpips_loss(
                 # Rescale value from [0, 1] to [-1, -1] and resize to 256 to save memory cost
-                F.interpolate(pred_images.view(-1, 3, self.cfg.output_size, self.cfg.output_size) * 2 - 1, (256, 256), mode='bilinear', align_corners=False),
                 F.interpolate(gt_images.view(-1, 3, self.cfg.output_size, self.cfg.output_size) * 2 - 1, (256, 256), mode='bilinear', align_corners=False),
+                F.interpolate(pred_images.view(-1, 3, self.cfg.output_size, self.cfg.output_size) * 2 - 1, (256, 256), mode='bilinear', align_corners=False),
             ).mean()
             results['loss_lpips'] = loss_lpips
             loss = loss + self.cfg.lambda_lpips * loss_lpips
@@ -178,8 +177,7 @@ class LGM(nn.Module):
 
         # metric
         with torch.no_grad():
-            mse = torch.mean((pred_images.detach() - gt_images) ** 2)
-            psnr = -10 * torch.log10(mse)
+            psnr = -10 * torch.log10(torch.mean((pred_images.detach() - gt_images) ** 2))
             results['psnr'] = psnr
 
         return results
