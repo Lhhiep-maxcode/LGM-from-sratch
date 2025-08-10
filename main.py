@@ -207,7 +207,7 @@ def main():
                         kiui.utils.write_image(f'{cfg.workspace}/{epoch}_{i}_eval_gt_images.jpg', gt_images)
 
                         pred_images = out['images_pred'].detach().cpu().numpy()     # [B, V, 3, output_size, output_size]
-                        pred_images = pred_images.transpose(0, 3, 1, 4, 2).reshape(-1, pred_images.shape[1] * gt_images.shape[3], 3)
+                        pred_images = pred_images.transpose(0, 3, 1, 4, 2).reshape(-1, pred_images.shape[1] * pred_images.shape[3], 3)
                         kiui.utils.write_image(f'{cfg.workspace}/{epoch}_{i}_eval_pred_images.jpg', pred_images)
 
             if accelerator.is_main_process:
