@@ -16,10 +16,17 @@ def main():
     cfg = tyro.cli(AllConfigs)
     
     run = wandb.init(
-        project=f"{cfg.experiment_name}",  # Specify your project
-        name=f"{cfg.experiment_name}",
+        project=cfg.wandb_project_name,  # Specify your project
+        name=cfg.wandb_experiment_name,
+        id=cfg.wandb_experiment_id,
+        resume=("must" if cfg.wandb_experiment_id else None),
         config={                        # Track hyperparameters and metadata
-            "epochs": cfg.num_epochs,            
+            "epochs": cfg.num_epochs, 
+            "input_size": cfg.input_size,
+            "splat_size": cfg.splat_size,
+            "output_size": cfg.output_size,
+            "num_views_used": cfg.num_views_used,
+            "lambda_lpips": cfg.lambda_lpips,           
         },
     )
 

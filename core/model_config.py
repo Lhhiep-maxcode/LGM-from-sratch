@@ -43,8 +43,10 @@ class Options:
     ### TRAINING
     # workspace
     workspace: str = './workspace'
+    # wandb
     wandb_project_name: str ='LGM-4001'
     wandb_experiment_name: str = 'default'
+    wandb_experiment_id: str = None
     # fine-tuning
     fine_tune: bool = True
     # resume
