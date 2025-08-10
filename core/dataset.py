@@ -138,7 +138,7 @@ class ObjaverseDataset(Dataset):
         
         view_cnt = len(images)
         if view_cnt < self.cfg.num_views_used:
-            print(f'[WARN] dataset {uid}: not enough valid views, only {view_cnt} views found!')
+            print(f'[WARN] dataset {item_path}: not enough valid views, only {view_cnt} views found!')
             # Padding to be enough views
             n = self.cfg.num_views_used - view_cnt
             images = images + [images[-1]] * n
