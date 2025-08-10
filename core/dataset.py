@@ -20,7 +20,7 @@ from typing import Tuple, Literal, Dict, Optional
 
 
 
-import kiui
+from kiui.cam import orbit_camera
 from core.model_config import Options
 from core.utils import get_rays, grid_distortion, orbit_camera_jitter
 
@@ -109,6 +109,9 @@ class ObjaverseDataset(Dataset):
                 print(f"Failed to load view id {view_id}:", e)
                 # print(f'[WARN] dataset {uid} {vid}: {e}')
                 continue
+            
+            if view_id == 24:
+                c2w = torch.from_numpy(orbit_camera(89.9, 0, radius=self.cfg.cam_radius, opengl=True))
 
             # scale up radius to make model make scale predictions
             c2w[:3, 3] *= self.cfg.cam_radius / 1.5 # 1.5 is the default scale of the dataset
