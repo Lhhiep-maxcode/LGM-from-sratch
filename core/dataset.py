@@ -35,9 +35,17 @@ class ObjaverseDataset(Dataset):
         self.cfg = cfg
         self.type = type if type in ['train', 'test', 'val'] else 'train'
 
-        # TODO: load the list of objects for training
-        self.items = [name for name in os.listdir(data_path)
-                      if os.path.isdir(os.path.join(data_path, name))]
+        
+        # Real training
+        self.subfolder = [os.path.join(data_path, sub) for sub in os.listdir(data_path) 
+                          if os.path.isdir(os.path.join(data_path, sub))]
+        
+        self.items = []
+        for sub in self.subfolder:
+            for item in os.listdir(sub):
+                item_path = os.path.join(sub, item)
+                if os.path.isdir(item_path):
+                    self.items.append(item_path)
 
         # naive split
         if self.type == 'val':
@@ -79,7 +87,7 @@ class ObjaverseDataset(Dataset):
 
         assert len(self.input_view_ids) <= self.cfg.num_views_used
 
-        uid = self.items[idx]
+        item_path = self.items[idx]
         results = {}
 
         # load num_views images
@@ -93,8 +101,8 @@ class ObjaverseDataset(Dataset):
         for view_id in view_ids:
         
             # data path: /kaggle/input/objaverse-subset/archive_4
-            image_path = os.path.join(self.data_path, uid, 'rgb', f'{view_id:03d}.png')
-            camera_path = os.path.join(self.data_path, uid, 'pose', f'{view_id:03d}.txt') 
+            image_path = os.path.join(item_path, 'rgb', f'{view_id:03d}.png')
+            camera_path = os.path.join(item_path, 'pose', f'{view_id:03d}.txt') 
 
             try:
                 image = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)  # shape: [512, 512, 4]

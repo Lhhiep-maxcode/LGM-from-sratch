@@ -11,10 +11,11 @@ import kiui
 import wandb
 
 def main():
-    wandb.login()
     
     cfg = tyro.cli(AllConfigs)
-    
+
+    wandb.login(key=cfg.wandb_key)
+
     run = wandb.init(
         project=cfg.wandb_project_name,  # Specify your project
         name=cfg.wandb_experiment_name,
@@ -154,10 +155,10 @@ def main():
                     "vr": round((mem_total-mem_free)/1024**3),
                 })
 
-                run.log({"Learning rate (step)": scheduler.get_last_lr()[0]})
                 
                 # save log images
-                if i % 500 == 0:
+                if i % 1000 == 0:
+                    run.log({"Learning rate (step)": scheduler.get_last_lr()[0]})
                     with torch.no_grad():
                         gt_images = data['images_output'].detach().cpu().numpy() # [B, V, 3, output_size, output_size]
                         gt_images = gt_images.transpose(0, 3, 1, 4, 2).reshape(-1, gt_images.shape[1] * gt_images.shape[3], 3)    # [B * output_size, V * output_size, 3]
@@ -200,13 +201,14 @@ def main():
 
                 if accelerator.is_main_process:
                     pbar2.update(1)
-                    # gt_images = data['images_output'].detach().cpu().numpy()    # [B, V, 3, output_size, output_size]
-                    # gt_images = gt_images.transpose(0, 3, 1, 4, 2).reshape(-1, gt_images.shape[1] * gt_images.shape[3], 3)
-                    # kiui.utils.write_image(f'{cfg.workspace}/{epoch}_{i}_eval_gt_images.jpg', gt_images)
+                    if i % 1000 == 0:
+                        gt_images = data['images_output'].detach().cpu().numpy()    # [B, V, 3, output_size, output_size]
+                        gt_images = gt_images.transpose(0, 3, 1, 4, 2).reshape(-1, gt_images.shape[1] * gt_images.shape[3], 3)
+                        kiui.utils.write_image(f'{cfg.workspace}/{epoch}_{i}_eval_gt_images.jpg', gt_images)
 
-                    # pred_images = out['images_pred'].detach().cpu().numpy()     # [B, V, 3, output_size, output_size]
-                    # pred_images = pred_images.transpose(0, 3, 1, 4, 2).reshape(-1, pred_images.shape[1] * gt_images.shape[3], 3)
-                    # kiui.utils.write_image(f'{cfg.workspace}/{epoch}_{i}_eval_pred_images.jpg', pred_images)
+                        pred_images = out['images_pred'].detach().cpu().numpy()     # [B, V, 3, output_size, output_size]
+                        pred_images = pred_images.transpose(0, 3, 1, 4, 2).reshape(-1, pred_images.shape[1] * gt_images.shape[3], 3)
+                        kiui.utils.write_image(f'{cfg.workspace}/{epoch}_{i}_eval_pred_images.jpg', pred_images)
 
             if accelerator.is_main_process:
                 pbar2.close()
