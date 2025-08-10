@@ -43,6 +43,7 @@ class Options:
     ### TRAINING
     # workspace
     workspace: str = './workspace'
+    experiment_name: str = 'LGM-4001'
     # fine-tuning
     fine_tune: bool = True
     # resume

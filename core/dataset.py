@@ -77,6 +77,7 @@ class ObjaverseDataset(Dataset):
             # │   │   ├── 000.txt
             # │   │   ├── 001.txt
 
+        assert len(self.input_view_ids) <= self.cfg.num_views_used
 
         uid = self.items[idx]
         results = {}

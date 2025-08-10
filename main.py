@@ -8,10 +8,21 @@ from tqdm.auto import tqdm
 import torch
 import tyro
 import kiui
+import wandb
 
 def main():
+    wandb.login()
+    
     cfg = tyro.cli(AllConfigs)
     
+    run = wandb.init(
+        project=f"{cfg.experiment_name}",  # Specify your project
+        config={                        # Track hyperparameters and metadata
+            "epochs": cfg.num_epochs,
+            
+        },
+    )
+
     accelerator = Accelerator(
         mixed_precision=cfg.mixed_precision,
         gradient_accumulation_steps=cfg.gradient_accumulation_steps
@@ -135,6 +146,8 @@ def main():
                     "psnr": float(psnr.detach()),
                     "vr": round((mem_total-mem_free)/1024**3),
                 })
+
+                run.log({"Learning rate (step)": scheduler.get_last_lr()[0]})
                 
                 # save log images
                 if i % 500 == 0:
@@ -158,6 +171,7 @@ def main():
             total_loss /= len(train_dataloader)
             total_psnr /= len(train_dataloader)
             accelerator.print(f"[TRAIN INFO] Epoch: {epoch + 1} loss: {total_loss:.6f} psnr: {total_psnr:.4f}")
+            run.log({"Train loss (Epoch)": total_loss, "Train psnr (Epoch)": total_psnr})
 
         # checkpoint
         if (epoch + 1) % 5 == 0 or epoch == cfg.num_epochs - 1:
@@ -194,6 +208,7 @@ def main():
             total_psnr = accelerator.gather_for_metrics(total_psnr).mean()
             if accelerator.is_main_process:
                 total_psnr /= len(test_dataloader)
+                run.log({"Test psnr (Epoch)": total_psnr})
                 accelerator.print(f"[EVAL INFO] Epoch: {epoch + 1} psnr: {psnr:.4f}")
 
             if total_psnr > best_psnr_eval:
