@@ -17,9 +17,9 @@ def main():
     
     run = wandb.init(
         project=f"{cfg.experiment_name}",  # Specify your project
+        name=f"{cfg.experiment_name}",
         config={                        # Track hyperparameters and metadata
-            "epochs": cfg.num_epochs,
-            
+            "epochs": cfg.num_epochs,            
         },
     )
 
