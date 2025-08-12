@@ -40,7 +40,7 @@ class LGM(nn.Module):
         self.scale_act = lambda x: 0.1 * F.softplus(x)
         self.opacity_act = lambda x: torch.sigmoid(x)
         self.rot_act = lambda x: F.normalize(x, dim=-1)
-        self.rgb_act = lambda x: 0.5 * torch.tanh(x) + 0.5 # NOTE: may use sigmoid if train again
+        self.rgb_act = lambda x: torch.sigmoid(x) # NOTE: may use sigmoid if train again
 
         # LPIPS loss
         if self.cfg.lambda_lpips > 0:
@@ -103,7 +103,7 @@ class LGM(nn.Module):
 
         x = x.permute(0, 1, 3, 4, 2).reshape(B, -1, 14)    # [B, 5, splat_size, splat_size, 14] --> [B, N, 14]
         
-        pos = self.pos_act(x[..., 0:3])     # [B, N, 3]
+        pos = x[..., 0:3]     # [B, N, 3]
         opacity = self.opacity_act(x[..., 3:4]) # [B, N, 1]
         scale = self.scale_act(x[..., 4:7]) # [B, N, 3]
         rotation = self.rot_act(x[..., 7:11])   # [B, N, 3]
@@ -152,6 +152,7 @@ class LGM(nn.Module):
         rendered_results = self.gs.render(gaussians, data['cam_view'], data['cam_view_proj'], data['cam_pos'], bg_color=bg_color)
         pred_images = rendered_results['image']  # [B, V, C, output_size, output_size]
         pred_alphas = rendered_results['alpha']  # [B, V, 1, output_size, output_size]
+        pred_images = pred_images * pred_alphas + (1 - pred_alphas) * bg_color.view(1, 1, 3, 1, 1)
 
         results['images_pred'] = pred_images
         results['alphas_pred'] = pred_alphas
@@ -161,7 +162,7 @@ class LGM(nn.Module):
 
         gt_images = gt_images * gt_masks + (1 - gt_masks) * bg_color.view(1, 1, 3, 1, 1)
 
-        loss_mse = F.mse_loss(pred_images, gt_images) + F.mse_loss(pred_alphas, gt_masks)
+        loss_mse = F.mse_loss(pred_images, gt_images) + self.cfg.lambda_alpha * F.mse_loss(pred_alphas, gt_masks)
         loss = loss + loss_mse
 
         if self.cfg.lambda_lpips > 0:

@@ -67,7 +67,7 @@ class ObjaverseDataset(Dataset):
         self.input_view_ids = [0, 2, 4, 6,         # L1
                                                    # L2
                                                    # L3
-                               24,]                # L4
+                               ]                # L4
         
         self.test_view_ids = [i for i in range(cfg.num_views_total) if i not in self.input_view_ids]
 
@@ -98,6 +98,15 @@ class ObjaverseDataset(Dataset):
         view_ids = self.input_view_ids + np.random.permutation(self.test_view_ids).tolist()
         view_ids = view_ids[:self.cfg.num_views_used]
 
+        def find_nonzero_bbox(alpha_channel):
+            """Find bounding box (ymin, ymax, xmin, xmax) where alpha > 0."""
+            ys, xs = np.where(alpha_channel > 0)
+            if len(xs) == 0 or len(ys) == 0:  # Fully transparent
+                return None
+            return ys.min(), ys.max(), xs.min(), xs.max()
+
+        global_ymin, global_ymax = 1e9, -1
+        global_xmin, global_xmax = 1e9, -1
         for view_id in view_ids:
         
             # data path: /kaggle/input/objaverse-subset/archive_4
@@ -106,6 +115,17 @@ class ObjaverseDataset(Dataset):
 
             try:
                 image = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)  # shape: [512, 512, 4]
+                alpha = image[:, :, 3]
+                bbox = find_nonzero_bbox(alpha)
+                if bbox is None:
+                    raise Exception("Fully transparent image -> Check it again")
+                
+                ymin, ymax, xmin, xmax = bbox
+                global_ymin = min(global_ymin, ymin)
+                global_ymax = max(global_ymax, ymax)
+                global_xmin = min(global_xmin, xmin)
+                global_xmax = max(global_xmax, xmax)
+
                 image = image.astype(np.float32) / 255.0
                 image = torch.from_numpy(image)  # shape: [H, W, C]
                 
@@ -135,7 +155,17 @@ class ObjaverseDataset(Dataset):
             masks.append(mask.squeeze(0))
             cam_poses.append(c2w)
 
-        
+        origin_size = images[0].shape[1]
+        res_ymax = origin_size - global_ymax
+        res_ymin = global_ymin
+        res_xmax = origin_size - global_xmax
+        res_xmin = global_xmin
+        min_res = min(res_ymax, min(res_ymin, min(res_xmax, res_xmin)))
+        images = [image[:, min_res:(origin_size - min_res), min_res:(origin_size - min_res)]
+                  for image in images]
+        masks = [mask[min_res:(origin_size - min_res), min_res:(origin_size - min_res)]
+                  for mask in masks]
+
         view_cnt = len(images)
         if view_cnt < self.cfg.num_views_used:
             print(f'[WARN] dataset {item_path}: not enough valid views, only {view_cnt} views found!')
@@ -157,12 +187,12 @@ class ObjaverseDataset(Dataset):
         images_input = F.interpolate(images[:len(self.input_view_ids)].clone(), size=(self.cfg.input_size, self.cfg.input_size), mode='bilinear', align_corners=False)   # [V, C, H, W]
         cam_poses_input = cam_poses[:len(self.input_view_ids)].clone()
         
-        # data augmentation
-        if self.type == 'train':
-            # if random.random() < self.cfg.prob_grid_distortion:
-            #     images_input[1:] = grid_distortion(images_input[1:])
-            if random.random() < self.cfg.prob_cam_jitter:
-                cam_poses_input[1:] = orbit_camera_jitter(cam_poses_input[1:])
+        # # data augmentation
+        # if self.type == 'train':
+        #     # if random.random() < self.cfg.prob_grid_distortion:
+        #     #     images_input[1:] = grid_distortion(images_input[1:])
+        #     if random.random() < self.cfg.prob_cam_jitter:
+        #         cam_poses_input[1:] = orbit_camera_jitter(cam_poses_input[1:])
 
         images_input = TF.normalize(images_input, IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD)
 
