@@ -38,7 +38,8 @@ class LGM(nn.Module):
         # activations...
         self.pos_act = lambda x: x.clamp(-1, 1)     # Dense Gaussians
         self.scale_act = lambda x: 0.1 * F.softplus(x)
-        self.opacity_act = lambda x: torch.sigmoid(x)
+        # self.opacity_act = lambda x: torch.sigmoid(x)
+        self.opacity_act = lambda x: torch.ones_like(x)
         self.rot_act = lambda x: F.normalize(x, dim=-1)
         self.rgb_act = lambda x: torch.sigmoid(x) # NOTE: may use sigmoid if train again
 
