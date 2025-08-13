@@ -165,7 +165,7 @@ def main():
                         kiui.write_image(f'{cfg.workspace}/{epoch}_{i}_train_gt_images.jpg', gt_images)
                     
                         gt_mask = data['masks_output'].detach().cpu().numpy() # [B, V, 3, output_size, output_size]
-                        gt_mask = gt_mask.transpose(0, 3, 1, 4, 2).reshape(-1, gt_mask.shape[1] * gt_mask.shape[3], 3)    # [B * output_size, V * output_size, 3]
+                        gt_mask = gt_mask.transpose(0, 3, 1, 4, 2).reshape(-1, gt_mask.shape[1] * gt_mask.shape[3], 1)    # [B * output_size, V * output_size, 3]
                         kiui.write_image(f'{cfg.workspace}/{epoch}_{i}_train_gt_mask.jpg', gt_mask)
 
                         pred_images = out['images_pred'].detach().cpu().numpy() # [B, V, 3, output_size, output_size]
@@ -173,7 +173,7 @@ def main():
                         kiui.write_image(f'{cfg.workspace}/{epoch}_{i}_train_pred_images.jpg', pred_images)
 
                         pred_mask = out['alphas_pred'].detach().cpu().numpy() # [B, V, 3, output_size, output_size]
-                        pred_mask = pred_mask.transpose(0, 3, 1, 4, 2).reshape(-1, pred_mask.shape[1] * pred_mask.shape[3], 3)  # [B * output_size, V * output_size, 3]
+                        pred_mask = pred_mask.transpose(0, 3, 1, 4, 2).reshape(-1, pred_mask.shape[1] * pred_mask.shape[3], 1)  # [B * output_size, V * output_size, 3]
                         kiui.write_image(f'{cfg.workspace}/{epoch}_{i}_train_pred_mask.jpg', pred_mask)
 
         if accelerator.is_main_process:
