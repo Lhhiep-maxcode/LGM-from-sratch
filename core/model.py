@@ -11,6 +11,7 @@ from core.unet import UNet
 from core.gs import GaussianRenderer
 from kiui.lpips import LPIPS
 from core.utils import get_rays
+from diffusers import AutoencoderKL
 
 
 class LGM(nn.Module):
@@ -21,7 +22,7 @@ class LGM(nn.Module):
 
         # UNet
         self.unet = UNet(
-            9, 14, 
+            10, 14,                                                        
             down_channels=self.cfg.down_channels,
             down_attention=self.cfg.down_attention,
             mid_attention=self.cfg.mid_attention,
@@ -29,8 +30,15 @@ class LGM(nn.Module):
             up_attention=self.cfg.up_attention,
         )
 
+        self.vae = AutoencoderKL.from_pretrained(                           
+            cfg.vae_model, 
+            subfolder="vae",
+        ).to("cuda") 
+        self.vae.requires_grad_(False)
+        
         # last conv
-        self.conv = nn.Conv2d(14, 14, kernel_size=1)
+        # self.conv = nn.Conv2d(14, 14, kernel_size=1)
+        self.conv = nn.Conv2d(14, 4 * 14, kernel_size=1)                     
 
         # Gaussian Renderer
         self.gs = GaussianRenderer(cfg)
@@ -38,10 +46,9 @@ class LGM(nn.Module):
         # activations...
         self.pos_act = lambda x: x.clamp(-1, 1)     # Dense Gaussians
         self.scale_act = lambda x: 0.1 * F.softplus(x)
-        # self.opacity_act = lambda x: torch.sigmoid(x)
-        self.opacity_act = lambda x: torch.ones_like(x)
+        self.opacity_act = lambda x: torch.sigmoid(x)
         self.rot_act = lambda x: F.normalize(x, dim=-1)
-        self.rgb_act = lambda x: torch.sigmoid(x) # NOTE: may use sigmoid if train again
+        self.rgb_act = lambda x: 0.5 * torch.tanh(x) + 0.5 # NOTE: may use sigmoid if train again
 
         # LPIPS loss
         if self.cfg.lambda_lpips > 0:
@@ -52,7 +59,7 @@ class LGM(nn.Module):
         # remove lpips_loss
         state_dict = super().state_dict(**kwargs)
         for k in list(state_dict.keys()):
-            if 'lpips_loss' in k:
+            if 'lpips_loss' in k or 'vae' in k: 
                 del state_dict[k]
         return state_dict
     
@@ -84,27 +91,41 @@ class LGM(nn.Module):
         return rays_embeddings
     
     def forward_gaussians(self, images):
-        # images: [B, 5, 9, H, W]
+        # images: [B, 13, 9, H, W]
         # return: Gaussians: [B, num_gauss * 14]
 
         B, V, C, H, W = images.shape
-        images = images.view(B*V, C, H, W)
+        rgb_images = images[:, :, :3, :, :]   # [B, 13, 3, H, W]
+        plucker = images[:, :, 3:, :, :]      # [B, 13, 6, H, W]
 
-        x = self.unet(images)   # [B*5, 14, H, W]
-        x = self.conv(x)        # [B*5, 14, H, W]
+        rgb_images_reshaped = rgb_images.reshape(B*V, 3, H, W)
 
-        x = x.reshape(B, 4, 14, self.cfg.splat_size, self.cfg.splat_size)
         
-        # # visualize multi-view gaussian features for plotting figure
-        # tmp_alpha = self.opacity_act(x[0, :, 3:4])
-        # tmp_img_rgb = self.rgb_act(x[0, :, 11:]) * tmp_alpha + (1 - tmp_alpha)
-        # tmp_img_pos = self.pos_act(x[0, :, 0:3]) * 0.5 + 0.5
-        # kiui.vis.plot_image(tmp_img_rgb, save=True)
-        # kiui.vis.plot_image(tmp_img_pos, save=True)
-
-        x = x.permute(0, 1, 3, 4, 2).reshape(B, -1, 14)    # [B, 5, splat_size, splat_size, 14] --> [B, N, 14]
+        with torch.no_grad():
+            latents = self.vae.encode(rgb_images_reshaped).latent_dist.sample()
+            latents = latents * self.vae.config.scaling_factor
         
-        pos = x[..., 0:3]     # [B, N, 3]
+        # [B*V, 4, H/8, W/8], = [B*13, 4, 32, 32]
+        _, latent_C, latent_H, latent_W = latents.shape
+
+        # Downsample plucker embedding for same size with latent
+        plucker_reshaped = plucker.reshape(B*V, 6, H, W)
+        plucker_downsampled = F.interpolate(plucker_reshaped, size=(latent_H, latent_W), mode='bilinear', align_corners=False)
+
+        unet_input = torch.cat([latents, plucker_downsampled], dim=1) # [B*13, 10, 32, 32]
+        
+        x = self.unet(unet_input)   # [B*13, 14*4, H, W]
+        x = self.conv(x)        # [B*13, 14*4, H, W]
+
+        _B_times_V, _C, _H, _W = x.shape 
+        # x = x.reshape(B, V, 14, _H, _W)
+        # x = x.permute(0, 1, 3, 4, 2).reshape(B, -1, 14)    # [B, 13, splat_size, splat_size, 14] --> [B, N, 14]
+        k = _C // 14
+        x = x.view(B, V, 14, k, _H, _W)
+        x = x.permute(0, 1, 4, 5, 3, 2).contiguous() # [B, V, H, W, k, 14]
+        x = x.view(B, -1, 14) # [B, V * H * W * k, 14]                                                # replace
+        
+        pos = self.pos_act(x[..., 0:3])     # [B, N, 3]
         opacity = self.opacity_act(x[..., 3:4]) # [B, N, 1]
         scale = self.scale_act(x[..., 4:7]) # [B, N, 3]
         rotation = self.rot_act(x[..., 7:11])   # [B, N, 3]
@@ -117,9 +138,9 @@ class LGM(nn.Module):
         # data: output of the dataloader
         # data = {
         #     [C, H, W]
-        #     'input': ...,             (processed input images 5x9x256x256)
+        #     'input': ...,             (processed input images 13x9x256x256)
         #     'cam_poses_input': ...,   
-        #     'images_output': ...,     (9x3x512x512)
+        #     'images_output': ...,     (17x3x512x512)
         #     'masks_output': ...,      (.......)
         #     'cam_view': ...,          (colmap coordinate)
         #     'cam_view_proj': ...,     (colmap coordinate)
@@ -139,7 +160,7 @@ class LGM(nn.Module):
         results = {}
         loss = 0
 
-        images = data['input']  # [B, 5, 9, H, W], input features (not necessarily orthogonal)
+        images = data['input']  # [B, 13, 9, H, W], input features (not necessarily orthogonal)
 
         # predicting 3DGS representation
         gaussians = self.forward_gaussians(images)  # [B, N, 14]
@@ -153,7 +174,6 @@ class LGM(nn.Module):
         rendered_results = self.gs.render(gaussians, data['cam_view'], data['cam_view_proj'], data['cam_pos'], bg_color=bg_color)
         pred_images = rendered_results['image']  # [B, V, C, output_size, output_size]
         pred_alphas = rendered_results['alpha']  # [B, V, 1, output_size, output_size]
-        pred_images = pred_images * pred_alphas + (1 - pred_alphas) * bg_color.view(1, 1, 3, 1, 1)
 
         results['images_pred'] = pred_images
         results['alphas_pred'] = pred_alphas
@@ -163,7 +183,8 @@ class LGM(nn.Module):
 
         gt_images = gt_images * gt_masks + (1 - gt_masks) * bg_color.view(1, 1, 3, 1, 1)
 
-        loss_mse = F.mse_loss(pred_images, gt_images) + self.cfg.lambda_alpha * F.mse_loss(pred_alphas, gt_masks)
+        loss_mse = F.mse_loss(pred_images, gt_images) + F.mse_loss(pred_alphas, gt_masks)
+        results['loss_mse'] = loss_mse
         loss = loss + loss_mse
 
         if self.cfg.lambda_lpips > 0:
@@ -179,7 +200,8 @@ class LGM(nn.Module):
 
         # metric
         with torch.no_grad():
-            psnr = -10 * torch.log10(torch.mean((pred_images.detach() - gt_images) ** 2))
+            mse = torch.mean((pred_images.detach() - gt_images) ** 2)
+            psnr = -10 * torch.log10(mse)
             results['psnr'] = psnr
 
         return results

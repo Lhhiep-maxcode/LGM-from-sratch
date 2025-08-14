@@ -17,15 +17,14 @@ import kiui
 
 class GaussianRenderer:
     def __init__(self, cfg: Options):
-        
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.cfg = cfg
         self.bg_color = torch.tensor([1, 1, 1], dtype=torch.float32, device="cuda")
         
-        # intrinsics
-        self.tan_half_fov = np.tan(0.5 * np.deg2rad(self.cfg.fovy))
-        self.projection_matrix = torch.zeros(4, 4, dtype=torch.float32)
-        self.projection_matrix[0, 0] = 1 / self.tan_half_fov
-        self.projection_matrix[1, 1] = 1 / self.tan_half_fov
+        self.tan_half_fovy = np.tan(np.deg2rad(cfg.fovy / 2))
+        self.projection_matrix = torch.zeros(4, 4).to(self.device)
+        self.projection_matrix[0, 0] = 1 / self.tan_half_fovy
+        self.projection_matrix[1, 1] = 1 / self.tan_half_fovy
         self.projection_matrix[2, 2] = (cfg.zfar + cfg.znear) / (cfg.zfar - cfg.znear)
         self.projection_matrix[3, 2] = - (cfg.zfar * cfg.znear) / (cfg.zfar - cfg.znear)
         self.projection_matrix[2, 3] = 1
@@ -61,8 +60,8 @@ class GaussianRenderer:
                 raster_settings = GaussianRasterizationSettings(
                     image_height=self.cfg.output_size,
                     image_width=self.cfg.output_size,
-                    tanfovx=self.tan_half_fov,
-                    tanfovy=self.tan_half_fov,
+                    tanfovx=self.tan_half_fovy,
+                    tanfovy=self.tan_half_fovy,
                     bg=self.bg_color if bg_color is None else bg_color,
                     scale_modifier=scale_modifier,
                     viewmatrix=view_matrix,
@@ -70,13 +69,14 @@ class GaussianRenderer:
                     sh_degree=0,
                     campos=campos,
                     prefiltered=False,
+                    antialiasing=False,
                     debug=False,
                 )
 
                 rasterizer = GaussianRasterizer(raster_settings=raster_settings)
 
                 # Rasterize visible Gaussians to image, obtain their radii (on screen).
-                rendered_image, radii, rendered_depth, rendered_alpha = rasterizer(
+                rendered_image, radii, rendered_alpha = rasterizer(
                     means3D=means3D,
                     means2D=torch.zeros_like(means3D, dtype=torch.float32, device=device),
                     shs=None,

@@ -21,7 +21,7 @@ class MVAttention(nn.Module):
         eps: float = 1e-5,
         residual: bool = True,
         skip_scale: float = 1,
-        num_frames: int = 4, # WARN: hardcoded!
+        num_frames: int = 13, # WARN: hardcoded!
     ):
         super().__init__()
 
@@ -40,9 +40,12 @@ class MVAttention(nn.Module):
         res = x
         x = self.norm(x)
 
+        # (BV, C, H, W) -> reshape: (B, V, C, H, W) -> permute: (B, V, H, W, C) -> reshape: (B, V * H * W, C)
         x = x.reshape(B, self.num_frames, C, H, W).permute(0, 1, 3, 4, 2).reshape(B, -1, C)
+        # (B, V * H * W, C)
         x = self.attn(x)
-        x = x.reshape(B, self.num_frames, H, W, C).permute(0, 1, 4, 2, 3).reshape(BV, C, H, W)
+        # (B, V * H * W, C) -> reshape: (B, V, H, W, C) -> permute: (B, V, C, H, W) -> reshape: (BV, C, H, W)
+        x = x.reshape(B, self.num_frames, H, W, C).permute(0, 1, 4, 2, 3).contiguous().reshape(BV, C, H, W)
 
         if self.residual:
             x = (x + res) * self.skip_scale
@@ -234,13 +237,13 @@ class UpBlock(nn.Module):
 class UNet(nn.Module):
     def __init__(
         self,
-        in_channels: int = 3,
-        out_channels: int = 3,
-        down_channels: Tuple[int, ...] = (64, 128, 256, 512, 1024),
-        down_attention: Tuple[bool, ...] = (False, False, False, True, True),
+        in_channels: int = 9,
+        out_channels: int = 14  ,
+        down_channels: Tuple[int, ...] = (64, 128, 256, 512, 1024, 1024),
+        down_attention: Tuple[bool, ...] = (False, False, False, True, True, True),
         mid_attention: bool = True,
-        up_channels: Tuple[int, ...] = (1024, 512, 256),
-        up_attention: Tuple[bool, ...] = (True, True, False),
+        up_channels: Tuple[int, ...] = (1024, 1024, 512, 256, 128),
+        up_attention: Tuple[bool, ...] = (True, True, True, False, False),
         layers_per_block: int = 2,
         skip_scale: float = np.sqrt(0.5),
     ):
@@ -295,7 +298,7 @@ class UNet(nn.Module):
 
         # first
         x = self.conv_in(x)
-        
+
         # down
         xss = [x]
         for block in self.down_blocks:
