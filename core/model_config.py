@@ -58,9 +58,12 @@ class Options:
     gradient_accumulation_steps: int = 1
     # training epochs
     num_epochs: int = 30
-    lambda_alpha: float = 0.25
+    lambda_alpha: float = 1.0
+    lambda_mse_start: float = 1.0
+    lambda_mse_end: float = 1.0
     # lpips loss weight (loss = L_mse + lambda * L_lpips)
-    lambda_lpips: float = 1.0
+    lambda_lpips_start: float = 1.0
+    lambda_lpips_end: float = 1.0
     # gradient clip
     gradient_clip: float = 1.0
     # mixed precision

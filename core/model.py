@@ -38,8 +38,8 @@ class LGM(nn.Module):
         # activations...
         self.pos_act = lambda x: x.clamp(-1, 1)     # Dense Gaussians
         self.scale_act = lambda x: 0.1 * F.softplus(x)
-        # self.opacity_act = lambda x: torch.sigmoid(x)
-        self.opacity_act = lambda x: torch.ones_like(x)
+        self.opacity_act = lambda x: torch.sigmoid(x)
+        # self.opacity_act = lambda x: torch.ones_like(x)
         self.rot_act = lambda x: F.normalize(x, dim=-1)
         self.rgb_act = lambda x: torch.sigmoid(x) # NOTE: may use sigmoid if train again
 
@@ -104,7 +104,7 @@ class LGM(nn.Module):
 
         x = x.permute(0, 1, 3, 4, 2).reshape(B, -1, 14)    # [B, 5, splat_size, splat_size, 14] --> [B, N, 14]
         
-        pos = x[..., 0:3]     # [B, N, 3]
+        pos = self.pos_act(x[..., 0:3])     # [B, N, 3]
         opacity = self.opacity_act(x[..., 3:4]) # [B, N, 1]
         scale = self.scale_act(x[..., 4:7]) # [B, N, 3]
         rotation = self.rot_act(x[..., 7:11])   # [B, N, 3]
@@ -113,7 +113,7 @@ class LGM(nn.Module):
         gaussians = torch.cat([pos, opacity, scale, rotation, rgbs], dim=-1)    # [B, N, 14]
         return gaussians
     
-    def forward(self, data):
+    def forward(self, data, lambda_mse, lambda_lpips):
         # data: output of the dataloader
         # data = {
         #     [C, H, W]
@@ -164,16 +164,16 @@ class LGM(nn.Module):
         gt_images = gt_images * gt_masks + (1 - gt_masks) * bg_color.view(1, 1, 3, 1, 1)
 
         loss_mse = F.mse_loss(pred_images, gt_images) + self.cfg.lambda_alpha * F.mse_loss(pred_alphas, gt_masks)
-        loss = loss + loss_mse
+        loss = loss + lambda_mse * loss_mse
 
-        if self.cfg.lambda_lpips > 0:
+        if lambda_lpips > 0:
             loss_lpips = self.lpips_loss(
                 # Rescale value from [0, 1] to [-1, -1] and resize to 256 to save memory cost
                 F.interpolate(gt_images.view(-1, 3, self.cfg.output_size, self.cfg.output_size) * 2 - 1, (256, 256), mode='bilinear', align_corners=False),
                 F.interpolate(pred_images.view(-1, 3, self.cfg.output_size, self.cfg.output_size) * 2 - 1, (256, 256), mode='bilinear', align_corners=False),
             ).mean()
             results['loss_lpips'] = loss_lpips
-            loss = loss + self.cfg.lambda_lpips * loss_lpips
+            loss = loss + lambda_lpips * loss_lpips
 
         results['loss'] = loss
 

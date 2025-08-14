@@ -4,6 +4,8 @@ from accelerate import Accelerator
 from safetensors.torch import load_file
 from core.dataset import ObjaverseDataset as Dataset
 from tqdm.auto import tqdm
+from torch.optim.lr_scheduler import LambdaLR
+
 
 import torch
 import tyro
@@ -128,8 +130,10 @@ def main():
                 optimizer.zero_grad()
 
                 step_ratio = (epoch + i / len(train_dataloader)) / cfg.num_epochs
+                lambda_lpips = cfg.lambda_lpips_start * (cfg.lambda_lpips_end / cfg.lambda_lpips_start) ** step_ratio
+                lambda_mse = cfg.lambda_mse_start * (cfg.lambda_mse_end / cfg.lambda_mse_start) ** step_ratio
 
-                out = model(data)
+                out = model(data, lambda_mse, lambda_lpips)
                 loss = out['loss']
                 psnr = out['psnr']
 
@@ -158,7 +162,11 @@ def main():
                 
                 # save log images
                 if i % 1000 == 0:
-                    run.log({"Learning rate (step)": scheduler.get_last_lr()[0]})
+                    run.log({
+                        "Learning rate (step)": scheduler.get_last_lr()[0], 
+                        "lambda MSE (step)": lambda_mse, 
+                        "lambda LPIPS (step)": lambda_lpips,
+                    })
                     with torch.no_grad():
                         gt_images = data['images_output'].detach().cpu().numpy() # [B, V, 3, output_size, output_size]
                         gt_images = gt_images.transpose(0, 3, 1, 4, 2).reshape(-1, gt_images.shape[1] * gt_images.shape[3], 3)    # [B * output_size, V * output_size, 3]
