@@ -20,7 +20,7 @@ from typing import Tuple, Literal, Dict, Optional
 
 
 
-import kiui
+from kiui.cam import orbit_camera
 from core.model_config import Options
 from core.utils import get_rays, grid_distortion, orbit_camera_jitter
 
@@ -35,9 +35,17 @@ class ObjaverseDataset(Dataset):
         self.cfg = cfg
         self.type = type if type in ['train', 'test', 'val'] else 'train'
 
-        # TODO: load the list of objects for training
-        self.items = [name for name in os.listdir(data_path)
-                      if os.path.isdir(os.path.join(data_path, name))]
+        
+        # Real training
+        self.subfolder = [os.path.join(data_path, sub) for sub in os.listdir(data_path) 
+                          if os.path.isdir(os.path.join(data_path, sub))]
+        
+        self.items = []
+        for sub in self.subfolder:
+            for item in os.listdir(sub):
+                item_path = os.path.join(sub, item)
+                if os.path.isdir(item_path):
+                    self.items.append(item_path)
 
         # naive split
         if self.type == 'val':
@@ -48,10 +56,10 @@ class ObjaverseDataset(Dataset):
             self.items = self.items[:int(self.cfg.train_size * len(self.items))]
 
         # default camera intrinsics
-        self.tan_half_fovy = np.tan(np.deg2rad(self.cfg.fovy / 2))
+        self.tan_half_fov = np.tan(0.5 * np.deg2rad(self.cfg.fovy))
         self.projection_matrix = torch.zeros(4, 4, dtype=torch.float32)
-        self.projection_matrix[0, 0] = 1 / self.tan_half_fovy
-        self.projection_matrix[1, 1] = 1 / self.tan_half_fovy
+        self.projection_matrix[0, 0] = 1 / self.tan_half_fov
+        self.projection_matrix[1, 1] = 1 / self.tan_half_fov
         self.projection_matrix[2, 2] = (self.cfg.zfar + self.cfg.znear) / (self.cfg.zfar - self.cfg.znear)
         self.projection_matrix[3, 2] = - (self.cfg.zfar * self.cfg.znear) / (self.cfg.zfar - self.cfg.znear)
         self.projection_matrix[2, 3] = 1
@@ -59,7 +67,7 @@ class ObjaverseDataset(Dataset):
         self.input_view_ids = [0, 2, 4, 6,         # L1
                                                    # L2
                                                    # L3
-                               24,]                # L4
+                               ]                # L4
         
         self.test_view_ids = [i for i in range(cfg.num_views_total) if i not in self.input_view_ids]
 
@@ -77,8 +85,9 @@ class ObjaverseDataset(Dataset):
             # │   │   ├── 000.txt
             # │   │   ├── 001.txt
 
+        assert len(self.input_view_ids) <= self.cfg.num_views_used
 
-        uid = self.items[idx]
+        item_path = self.items[idx]
         results = {}
 
         # load num_views images
@@ -89,14 +98,34 @@ class ObjaverseDataset(Dataset):
         view_ids = self.input_view_ids + np.random.permutation(self.test_view_ids).tolist()
         view_ids = view_ids[:self.cfg.num_views_used]
 
+        def find_nonzero_bbox(alpha_channel):
+            """Find bounding box (ymin, ymax, xmin, xmax) where alpha > 0."""
+            ys, xs = np.where(alpha_channel > 0)
+            if len(xs) == 0 or len(ys) == 0:  # Fully transparent
+                return None
+            return ys.min(), ys.max(), xs.min(), xs.max()
+
+        global_ymin, global_ymax = 1e9, -1
+        global_xmin, global_xmax = 1e9, -1
         for view_id in view_ids:
         
             # data path: /kaggle/input/objaverse-subset/archive_4
-            image_path = os.path.join(self.data_path, uid, 'rgb', f'{view_id:03d}.png')
-            camera_path = os.path.join(self.data_path, uid, 'pose', f'{view_id:03d}.txt') 
+            image_path = os.path.join(item_path, 'rgb', f'{view_id:03d}.png')
+            camera_path = os.path.join(item_path, 'pose', f'{view_id:03d}.txt') 
 
             try:
                 image = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)  # shape: [512, 512, 4]
+                alpha = image[:, :, 3]
+                bbox = find_nonzero_bbox(alpha)
+                if bbox is None:
+                    raise Exception("Fully transparent image -> Check it again")
+                
+                ymin, ymax, xmin, xmax = bbox
+                global_ymin = min(global_ymin, ymin)
+                global_ymax = max(global_ymax, ymax)
+                global_xmin = min(global_xmin, xmin)
+                global_xmax = max(global_xmax, xmax)
+
                 image = image.astype(np.float32) / 255.0
                 image = torch.from_numpy(image)  # shape: [H, W, C]
                 
@@ -106,8 +135,12 @@ class ObjaverseDataset(Dataset):
                     # OpenGL camera matrix: [4, 4]
                     c2w = torch.tensor([list(map(float, line.strip().split())) for line in lines]).reshape(4, 4)
             except Exception as e:
+                print(f"Failed to load view id {view_id}:", e)
                 # print(f'[WARN] dataset {uid} {vid}: {e}')
                 continue
+            
+            if view_id == 24:
+                c2w = torch.from_numpy(orbit_camera(89.9, 0, radius=self.cfg.cam_radius, opengl=True))
 
             # scale up radius to make model make scale predictions
             c2w[:3, 3] *= self.cfg.cam_radius / 1.5 # 1.5 is the default scale of the dataset
@@ -122,10 +155,20 @@ class ObjaverseDataset(Dataset):
             masks.append(mask.squeeze(0))
             cam_poses.append(c2w)
 
-        
+        origin_size = images[0].shape[1]
+        res_ymax = origin_size - global_ymax
+        res_ymin = global_ymin
+        res_xmax = origin_size - global_xmax
+        res_xmin = global_xmin
+        min_res = min(res_ymax, min(res_ymin, min(res_xmax, res_xmin)))
+        images = [image[:, min_res:(origin_size - min_res), min_res:(origin_size - min_res)]
+                  for image in images]
+        masks = [mask[min_res:(origin_size - min_res), min_res:(origin_size - min_res)]
+                  for mask in masks]
+
         view_cnt = len(images)
         if view_cnt < self.cfg.num_views_used:
-            print(f'[WARN] dataset {uid}: not enough valid views, only {view_cnt} views found!')
+            print(f'[WARN] dataset {item_path}: not enough valid views, only {view_cnt} views found!')
             # Padding to be enough views
             n = self.cfg.num_views_used - view_cnt
             images = images + [images[-1]] * n
@@ -144,12 +187,12 @@ class ObjaverseDataset(Dataset):
         images_input = F.interpolate(images[:len(self.input_view_ids)].clone(), size=(self.cfg.input_size, self.cfg.input_size), mode='bilinear', align_corners=False)   # [V, C, H, W]
         cam_poses_input = cam_poses[:len(self.input_view_ids)].clone()
         
-        # data augmentation
-        if self.type == 'train':
-            # if random.random() < self.cfg.prob_grid_distortion:
-            #     images_input[1:] = grid_distortion(images_input[1:])
-            if random.random() < self.cfg.prob_cam_jitter:
-                cam_poses_input[1:] = orbit_camera_jitter(cam_poses_input[1:])
+        # # data augmentation
+        # if self.type == 'train':
+        #     # if random.random() < self.cfg.prob_grid_distortion:
+        #     #     images_input[1:] = grid_distortion(images_input[1:])
+        #     if random.random() < self.cfg.prob_cam_jitter:
+        #         cam_poses_input[1:] = orbit_camera_jitter(cam_poses_input[1:])
 
         images_input = TF.normalize(images_input, IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD)
 
@@ -184,9 +227,9 @@ class ObjaverseDataset(Dataset):
 
         # results = {
         #     [C, H, W]
-        #     'input': ...,             (processed input images 25x9x256x256)
+        #     'input': ...,             (processed input images 5x9x256x256)
         #     'cam_poses_input': ...,   
-        #     'images_output': ...,     (25x3x512x512)
+        #     'images_output': ...,     (9x3x512x512)
         #     'masks_output': ...,      (.......)
         #     'cam_view': ...,          (colmap coordinate)
         #     'cam_view_proj': ...,     (colmap coordinate)
