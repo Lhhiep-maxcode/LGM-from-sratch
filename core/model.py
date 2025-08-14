@@ -38,9 +38,10 @@ class LGM(nn.Module):
         # activations...
         self.pos_act = lambda x: x.clamp(-1, 1)     # Dense Gaussians
         self.scale_act = lambda x: 0.1 * F.softplus(x)
-        self.opacity_act = lambda x: torch.sigmoid(x)
+        # self.opacity_act = lambda x: torch.sigmoid(x)
+        self.opacity_act = lambda x: torch.ones_like(x)
         self.rot_act = lambda x: F.normalize(x, dim=-1)
-        self.rgb_act = lambda x: 0.5 * torch.tanh(x) + 0.5 # NOTE: may use sigmoid if train again
+        self.rgb_act = lambda x: torch.sigmoid(x) # NOTE: may use sigmoid if train again
 
         # LPIPS loss
         if self.cfg.lambda_lpips > 0:
@@ -83,14 +84,14 @@ class LGM(nn.Module):
         return rays_embeddings
     
     def forward_gaussians(self, images):
-        # images: [B, 4, 9, H, W]
+        # images: [B, 5, 9, H, W]
         # return: Gaussians: [B, num_gauss * 14]
 
         B, V, C, H, W = images.shape
         images = images.view(B*V, C, H, W)
 
-        x = self.unet(images)   # [B*4, 14, H, W]
-        x = self.conv(x)        # [B*4, 14, H, W]
+        x = self.unet(images)   # [B*5, 14, H, W]
+        x = self.conv(x)        # [B*5, 14, H, W]
 
         x = x.reshape(B, 4, 14, self.cfg.splat_size, self.cfg.splat_size)
         
@@ -101,9 +102,9 @@ class LGM(nn.Module):
         # kiui.vis.plot_image(tmp_img_rgb, save=True)
         # kiui.vis.plot_image(tmp_img_pos, save=True)
 
-        x = x.permute(0, 1, 3, 4, 2).reshape(B, -1, 14)    # [B, 4, splat_size, splat_size, 14] --> [B, N, 14]
+        x = x.permute(0, 1, 3, 4, 2).reshape(B, -1, 14)    # [B, 5, splat_size, splat_size, 14] --> [B, N, 14]
         
-        pos = self.pos_act(x[..., 0:3])     # [B, N, 3]
+        pos = x[..., 0:3]     # [B, N, 3]
         opacity = self.opacity_act(x[..., 3:4]) # [B, N, 1]
         scale = self.scale_act(x[..., 4:7]) # [B, N, 3]
         rotation = self.rot_act(x[..., 7:11])   # [B, N, 3]
@@ -116,10 +117,9 @@ class LGM(nn.Module):
         # data: output of the dataloader
         # data = {
         #     [C, H, W]
-        #     'number_of_input_views': ....
-        #     'input': ...,             (processed input images 25x9x256x256)
+        #     'input': ...,             (processed input images 5x9x256x256)
         #     'cam_poses_input': ...,   
-        #     'images_output': ...,     (25x3x512x512)
+        #     'images_output': ...,     (9x3x512x512)
         #     'masks_output': ...,      (.......)
         #     'cam_view': ...,          (colmap coordinate)
         #     'cam_view_proj': ...,     (colmap coordinate)
@@ -139,7 +139,7 @@ class LGM(nn.Module):
         results = {}
         loss = 0
 
-        images = data['input'][:, :4]  # [B, 4, 9, H, W], input features (not necessarily orthogonal)
+        images = data['input']  # [B, 5, 9, H, W], input features (not necessarily orthogonal)
 
         # predicting 3DGS representation
         gaussians = self.forward_gaussians(images)  # [B, N, 14]
@@ -153,6 +153,7 @@ class LGM(nn.Module):
         rendered_results = self.gs.render(gaussians, data['cam_view'], data['cam_view_proj'], data['cam_pos'], bg_color=bg_color)
         pred_images = rendered_results['image']  # [B, V, C, output_size, output_size]
         pred_alphas = rendered_results['alpha']  # [B, V, 1, output_size, output_size]
+        pred_images = pred_images * pred_alphas + (1 - pred_alphas) * bg_color.view(1, 1, 3, 1, 1)
 
         results['images_pred'] = pred_images
         results['alphas_pred'] = pred_alphas
@@ -162,15 +163,14 @@ class LGM(nn.Module):
 
         gt_images = gt_images * gt_masks + (1 - gt_masks) * bg_color.view(1, 1, 3, 1, 1)
 
-        loss_mse = F.mse_loss(pred_images, gt_images) + F.mse_loss(pred_alphas, gt_masks)
-        results['loss_mse'] = loss_mse
+        loss_mse = F.mse_loss(pred_images, gt_images) + self.cfg.lambda_alpha * F.mse_loss(pred_alphas, gt_masks)
         loss = loss + loss_mse
 
         if self.cfg.lambda_lpips > 0:
             loss_lpips = self.lpips_loss(
                 # Rescale value from [0, 1] to [-1, -1] and resize to 256 to save memory cost
-                F.interpolate(pred_images.view(-1, 3, self.cfg.output_size, self.cfg.output_size) * 2 - 1, (256, 256), mode='bilinear', align_corners=False),
                 F.interpolate(gt_images.view(-1, 3, self.cfg.output_size, self.cfg.output_size) * 2 - 1, (256, 256), mode='bilinear', align_corners=False),
+                F.interpolate(pred_images.view(-1, 3, self.cfg.output_size, self.cfg.output_size) * 2 - 1, (256, 256), mode='bilinear', align_corners=False),
             ).mean()
             results['loss_lpips'] = loss_lpips
             loss = loss + self.cfg.lambda_lpips * loss_lpips
@@ -179,8 +179,7 @@ class LGM(nn.Module):
 
         # metric
         with torch.no_grad():
-            mse = torch.mean((pred_images.detach() - gt_images) ** 2)
-            psnr = -10 * torch.log10(mse)
+            psnr = -10 * torch.log10(torch.mean((pred_images.detach() - gt_images) ** 2))
             results['psnr'] = psnr
 
         return results
