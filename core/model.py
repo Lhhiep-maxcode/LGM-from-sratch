@@ -111,7 +111,7 @@ class LGM(nn.Module):
         gaussians = torch.cat([pos, opacity, scale, rotation, rgbs], dim=-1)    # [B, N, 14]
         return gaussians
     
-    def forward(self, data, lambda_mse, lambda_lpips):
+    def forward(self, data, lambda_mse=1, lambda_lpips=1):
         # data: output of the dataloader
         # data = {
         #     [C, H, W]
