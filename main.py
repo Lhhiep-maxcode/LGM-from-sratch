@@ -29,7 +29,11 @@ def main():
             "splat_size": cfg.splat_size,
             "output_size": cfg.output_size,
             "num_views_used": cfg.num_views_used,
-            "lambda_lpips": cfg.lambda_lpips,           
+            "lambda_lpips_start": cfg.lambda_lpips_start, 
+            "lambda_lpips_end": cfg.lambda_lpips_end,
+            "lambda_mse_start": cfg.lambda_mse_start,
+            "lambda_mse_end": cfg.lambda_mse_end,
+            "lambda_alpha": cfg.lambda_alpha,          
         },
     )
 
