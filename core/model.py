@@ -43,10 +43,8 @@ class LGM(nn.Module):
         self.rot_act = lambda x: F.normalize(x, dim=-1)
         self.rgb_act = lambda x: torch.sigmoid(x) # NOTE: may use sigmoid if train again
 
-        # LPIPS loss
-        if self.cfg.lambda_lpips > 0:
-            self.lpips_loss = LPIPS(net='vgg')
-            self.lpips_loss.requires_grad_(False)
+        self.lpips_loss = LPIPS(net='vgg')
+        self.lpips_loss.requires_grad_(False)
 
     def state_dict(self, **kwargs):
         # remove lpips_loss
