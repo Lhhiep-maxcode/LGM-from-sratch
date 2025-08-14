@@ -11,12 +11,14 @@ class Options:
     down_channels: Tuple[int, ...] = (64, 128, 256, 512, 1024, 1024)
     down_attention: Tuple[bool, ...] = (False, False, False, True, True, True)
     mid_attention: bool = True
-    up_channels: Tuple[int, ...] = (1024, 1024, 512, 256)
-    up_attention: Tuple[bool, ...] = (True, True, True, False)
+    up_channels: Tuple[int, ...] = (1024, 1024, 512, 256, 128)
+    up_attention: Tuple[bool, ...] = (True, True, True, False, False)
     # Unet output size, dependent on the input_size and U-Net structure!
     splat_size: int = 64
     # gaussian render size
     output_size: int = 256
+
+    vae_model: str = 'stabilityai/stable-diffusion-2-1-base'
 
     ### DATASET
     train_size: float = 0.8
@@ -34,15 +36,20 @@ class Options:
     # number of total views
     num_views_total: int = 25
     # number of (input + test) views
-    num_views_used: int = 9
+    num_views_used: int = 17
     # camera radius (radius of camera orbitting around object)   ---> CHUA HIEU
     cam_radius: float = 1.5 # to better use [-1, 1]^3 space
     # num workers
-    num_workers: int = 8
+    num_workers: int = 2
 
     ### TRAINING
     # workspace
     workspace: str = './workspace'
+    # wandb
+    wandb_key: str = None
+    experiment_name: str = 'LGM-4441'
+    wandb_experiment_name: str = 'default'
+    wandb_experiment_id: str = None
     # fine-tuning
     fine_tune: bool = True
     # resume
@@ -60,7 +67,7 @@ class Options:
     # mixed precision
     mixed_precision: str = 'bf16'
     # learning rate
-    lr: float = 4e-4
+    lr: float = 1e-4                                                   # 4e-4 -> 1e-4
     # augmentation prob for grid distortion
     prob_grid_distortion: float = 0.5
     # augmentation prob for camera jitter
@@ -126,5 +133,25 @@ config_defaults['big'] = Options(
     mixed_precision='bf16',
 )
 
+config_doc['lrm-vae'] = 'settings for LGM with VAE latent space'                     # add here                    
+config_defaults['lrm-vae'] = Options(
+    vae_model='stabilityai/stable-diffusion-2-1-base',
+    
+    # Same with original lrm
+    down_channels=(64, 128, 256, 512, 1024, 1024),
+    down_attention=(False, False, False, True, True, True),
+    mid_attention=True,
+    up_channels=(1024, 1024, 512, 256, 128),
+    up_attention=(True, True, True, False, False),
+
+    # Only change this
+    splat_size=16,
+    
+    # Same
+    output_size=256,
+    batch_size=1, 
+    gradient_accumulation_steps=8,
+    mixed_precision='fp16',
+)
 
 AllConfigs = tyro.extras.subcommand_type_from_defaults(config_defaults, config_doc)
