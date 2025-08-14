@@ -4,15 +4,15 @@ from accelerate import Accelerator
 from safetensors.torch import load_file
 from core.dataset import ObjaverseDataset as Dataset
 from tqdm.auto import tqdm
+from diffusers import AutoencoderKL
 
 import torch
 import tyro
 import kiui
 import wandb
 
-def main():
-    
-    cfg = tyro.cli(AllConfigs)
+def main():    
+    cfg = tyro.cli(AllConfigs, args=['lrm-vae'])
 
     wandb.login(key=cfg.wandb_key)
 
@@ -38,6 +38,7 @@ def main():
 
     model = LGM(cfg)
 
+    
     # Load model checkpoint for FINE-TUNING
     if cfg.fine_tune and cfg.resume is not None:
         # (cfg.resume in file type)
@@ -163,18 +164,11 @@ def main():
                         gt_images = data['images_output'].detach().cpu().numpy() # [B, V, 3, output_size, output_size]
                         gt_images = gt_images.transpose(0, 3, 1, 4, 2).reshape(-1, gt_images.shape[1] * gt_images.shape[3], 3)    # [B * output_size, V * output_size, 3]
                         kiui.write_image(f'{cfg.workspace}/{epoch}_{i}_train_gt_images.jpg', gt_images)
-                    
-                        gt_mask = data['masks_output'].detach().cpu().numpy() # [B, V, 3, output_size, output_size]
-                        gt_mask = gt_mask.transpose(0, 3, 1, 4, 2).reshape(-1, gt_mask.shape[1] * gt_mask.shape[3], 1)    # [B * output_size, V * output_size, 3]
-                        kiui.write_image(f'{cfg.workspace}/{epoch}_{i}_train_gt_mask.jpg', gt_mask)
+
 
                         pred_images = out['images_pred'].detach().cpu().numpy() # [B, V, 3, output_size, output_size]
                         pred_images = pred_images.transpose(0, 3, 1, 4, 2).reshape(-1, pred_images.shape[1] * pred_images.shape[3], 3)  # [B * output_size, V * output_size, 3]
                         kiui.write_image(f'{cfg.workspace}/{epoch}_{i}_train_pred_images.jpg', pred_images)
-
-                        pred_mask = out['alphas_pred'].detach().cpu().numpy() # [B, V, 3, output_size, output_size]
-                        pred_mask = pred_mask.transpose(0, 3, 1, 4, 2).reshape(-1, pred_mask.shape[1] * pred_mask.shape[3], 1)  # [B * output_size, V * output_size, 3]
-                        kiui.write_image(f'{cfg.workspace}/{epoch}_{i}_train_pred_mask.jpg', pred_mask)
 
         if accelerator.is_main_process:
             pbar.close()
