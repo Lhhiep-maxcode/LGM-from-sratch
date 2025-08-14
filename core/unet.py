@@ -9,7 +9,7 @@ from core.attention import MemEffAttention
 from functools import partial
 from typing import Tuple, Literal
 
-# Multi-view Attention: Attention across multi view
+
 class MVAttention(nn.Module):
     def __init__(
         self,
@@ -23,7 +23,7 @@ class MVAttention(nn.Module):
         eps: float = 1e-5,
         residual: bool = True,
         skip_scale: float = 1,
-        num_frames: int = 13,
+        num_frames: int = 5,
     ):
         super().__init__()
 
@@ -35,7 +35,7 @@ class MVAttention(nn.Module):
         self.attn = MemEffAttention(dim, num_heads, qkv_bias, proj_bias, attn_drop, proj_drop)
 
     def forward(self, x):
-        BV, C, H, W = x.shape # BV = Batch * View
+        BV, C, H, W = x.shape
         B = BV // self.num_frames
 
         res = x
@@ -61,7 +61,7 @@ class ResnetBlock(nn.Module):
         resample: Literal['default', 'up', 'down'] = 'default',
         groups: int = 32,
         eps: float = 1e-5,
-        skip_scale: float = 1, # multiplied to output, preventing from exploding activations
+        skip_scale: float = 1, # multiplied to output
     ):
         super().__init__()
 
@@ -69,7 +69,6 @@ class ResnetBlock(nn.Module):
         self.out_channels = out_channels
         self.skip_scale = skip_scale
 
-        # There are a lot of ways for normalization, here GroupNorm is usually used for U-net
         self.norm1 = nn.GroupNorm(num_groups=groups, num_channels=in_channels, eps=eps, affine=True)
         self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=1, padding=1)
 
@@ -78,12 +77,11 @@ class ResnetBlock(nn.Module):
 
         self.act = F.silu
 
-        # This one is set to default in this file, no up or down
         self.resample = None
         if resample == 'up':
             self.resample = partial(F.interpolate, scale_factor=2.0, mode="nearest")
         elif resample == 'down':
-            self.resample = nn.AvgPool2d(kernel_size=2, stride=2) # average for the kernel
+            self.resample = nn.AvgPool2d(kernel_size=2, stride=2)
         
         self.shortcut = nn.Identity()
         if self.in_channels != self.out_channels:
@@ -115,7 +113,7 @@ class DownBlock(nn.Module):
         self,
         in_channels: int,
         out_channels: int,
-        num_layers: int = 1, # each layer have 1 ResnetBlack and 1 MVAttention optional
+        num_layers: int = 1,
         downsample: bool = True,
         attention: bool = True,
         attention_heads: int = 16,
@@ -132,10 +130,9 @@ class DownBlock(nn.Module):
                 attns.append(MVAttention(out_channels, attention_heads, skip_scale=skip_scale))
             else:
                 attns.append(None)
-        self.nets = nn.ModuleList(nets) # for training
-        self.attns = nn.ModuleList(attns) 
+        self.nets = nn.ModuleList(nets)
+        self.attns = nn.ModuleList(attns)
 
-        # Different with the 'down' in the ResnetBlock is that this one can be leanred
         self.downsample = None
         if downsample:
             self.downsample = nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=2, padding=1)

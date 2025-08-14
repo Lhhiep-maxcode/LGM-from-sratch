@@ -11,8 +11,8 @@ class Options:
     down_channels: Tuple[int, ...] = (64, 128, 256, 512, 1024, 1024)
     down_attention: Tuple[bool, ...] = (False, False, False, True, True, True)
     mid_attention: bool = True
-    up_channels: Tuple[int, ...] = (1024, 1024, 512, 256, 128)
-    up_attention: Tuple[bool, ...] = (True, True, True, False, False)
+    up_channels: Tuple[int, ...] = (1024, 1024, 512, 256)
+    up_attention: Tuple[bool, ...] = (True, True, True, False)
     # Unet output size, dependent on the input_size and U-Net structure!
     splat_size: int = 64
     # gaussian render size
@@ -34,7 +34,7 @@ class Options:
     # number of total views
     num_views_total: int = 25
     # number of (input + test) views
-    num_views_used: int = 17
+    num_views_used: int = 9
     # camera radius (radius of camera orbitting around object)   ---> CHUA HIEU
     cam_radius: float = 1.5 # to better use [-1, 1]^3 space
     # num workers

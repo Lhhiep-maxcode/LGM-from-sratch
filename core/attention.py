@@ -6,8 +6,6 @@ import warnings
 from torch import Tensor
 from torch import nn
 
-# xformer is a library provide things that are optimize for Transformer
-# which run much faster than the default version
 XFORMERS_ENABLED = os.environ.get("XFORMERS_DISABLED") is None
 try:
     if XFORMERS_ENABLED:
@@ -33,7 +31,6 @@ class Attention(nn.Module):
         proj_drop: float = 0.0,
     ):
         super().__init__()
-        # Attention(Q, K, V) = softmax(K^T x Q / sqrt(d_k)) x V 
         self.num_heads = num_heads
         self.scale = (dim // self.num_heads) ** -0.5    # scale for dot-product
 
@@ -44,29 +41,35 @@ class Attention(nn.Module):
 
     def forward(self, x):
         B, N, C = x.shape   # N = H * W
-        # (B, N, C) -> (B, N, C*3) -> (B, N, 3, heads, channel/head) -> (3, B, heads, N, channel/head)
+        # (B, N, C) -> (3, B, heads, N, channel/head)
         qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
+        # print("Expected: (B, N, 3, heads, channel/head) -> (3, B, heads, N, channel/head)")
+        # print(x.shape, '-->', qkv.shape)
 
-        q, k, v = qkv[0] * self.scale,  qkv[1], qkv[2]
-        # (B, heads, N, channel/head) @ (B, heads, channel/head, N) = (B, heads, N, N)
+        q, k, v = qkv[0] * self.scale, qkv[1], qkv[2]
+        # res = (B, heads, N, N)
         attn = q @ k.transpose(-2, -1)
         attn = attn.softmax(-1)
         attn = self.attn_drop(attn)
-        # usually this step end at softmax, but we add a layer of dropout, prevent from overfitting
+        # print("Expected: (B, heads, N, N)")
+        # print(attn.shape)
 
-        # (B, heads, N, N) @ (B, heads, N, channel/head) = (B, heads, N, channel/head)
+        # (B, heads, N, channel/head) -> (B, N, heads, channel/head) -> (B, N, C)
         x1 = (attn @ v)
-        x2 = x1.transpose(1, 2) # (B, N, heads, channel/head)
-        x = x2.reshape(B, N, C) # (B, N, C)
+        x2 = x1.transpose(1, 2)
+        x = x2.reshape(B, N, C)
+        # print("Expected: (B, heads, N, channel/head) -> (B, N, heads, channel/head) -> (B, N, C)")
+        # print(x1.shape, '-->', x2.shape, '-->', x.shape)
 
         # (B, N, C) -> (B, N, C)
         x1 = self.proj(x)
         x = self.proj_drop(x1)
-   
+        # print("Expected: (B, N, C) -> (B, N, C)")
+        # print(x1.shape, '-->', x.shape)
+
         return x
     
-# Memory Efficient
-class MemEffAttention(Attention): 
+class MemEffAttention(Attention):
     def forward(self, x: Tensor, attn_bias=None) -> Tensor:
         if not XFORMERS_AVAILABLE:
             if attn_bias is not None:
@@ -121,20 +124,30 @@ class CrossAttention(nn.Module):
 
         # [B, N, Cq] -> [B, N, C] -> [B, N, nh, C/nh] -> [B, nh, N, C/nh]
         q = self.scale * (self.to_q(q).reshape(B, N, self.num_heads, -1).permute(0, 2, 1, 3))
+        # print("Expected: [B, nh, N, C/nh]")
+        # print(q.shape)
         # [B, nh, M, C/nh]
         k = (self.to_k(k).reshape(B, M, self.num_heads, -1).permute(0, 2, 1, 3))
+        # print("Expected: [B, nh, M, C/nh]")
+        # print(k.shape)
         # [B, nh, M, C/nh]
         v = (self.to_v(v).reshape(B, M, self.num_heads, -1).permute(0, 2, 1, 3))
+        # print("Expected: [B, nh, M, C/nh]")
+        # print(v.shape)
 
         # [B, nh, N, M]
         attn = q @ k.transpose(-2, -1)
         attn = attn.softmax(dim=-1)
         attn = self.attn_drop(attn) 
+        # print("Expected [B, nh, N, M]")
+        # print(attn.shape)
 
         # [B, N, C]
         x = (attn @ v).transpose(1, 2).reshape(B, N, -1)
         x = self.proj(x)
         x = self.proj_drop(x)
+        # print("Expected [B, N, C]")
+        # print(x.shape)
         return x
 
 
