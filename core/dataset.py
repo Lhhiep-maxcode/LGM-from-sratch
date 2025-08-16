@@ -118,7 +118,7 @@ class ObjaverseDataset(Dataset):
                 alpha = image[:, :, 3]
                 bbox = find_nonzero_bbox(alpha)
                 if bbox is None:
-                    raise Exception("Fully transparent image -> Check it again")
+                    raise Exception(f"Fully transparent image at {item_path}")
                 
                 ymin, ymax, xmin, xmax = bbox
                 global_ymin = min(global_ymin, ymin)
@@ -136,7 +136,6 @@ class ObjaverseDataset(Dataset):
                     c2w = torch.tensor([list(map(float, line.strip().split())) for line in lines]).reshape(4, 4)
             except Exception as e:
                 print(f"Failed to load view id {view_id}:", e)
-                # print(f'[WARN] dataset {uid} {vid}: {e}')
                 continue
             
             if view_id == 24:
