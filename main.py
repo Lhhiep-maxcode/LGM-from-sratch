@@ -163,16 +163,17 @@ def main():
                     "vr": round((mem_total-mem_free)/1024**3),
                 })
 
-                if i % 100 == 0:
-                    run.log({"Train loss (step)": loss.detach()})
-                    
+                if i % 10 == 0:
+                    run.log({
+                        "Learning rate (10 step)": scheduler.get_last_lr()[0], 
+                        "lambda MSE (10 step)": lambda_mse, 
+                        "lambda LPIPS (10 step)": lambda_lpips,
+                        "Train loss (10 steps)": loss.detach(), 
+                        "Train psnr (10 steps)": psnr.detach()
+                    })
+
                 # save log images
                 if i % 500 == 0:
-                    run.log({
-                        "Learning rate (step)": scheduler.get_last_lr()[0], 
-                        "lambda MSE (step)": lambda_mse, 
-                        "lambda LPIPS (step)": lambda_lpips,
-                    })
                     with torch.no_grad():
                         gt_images = data['images_output'].detach().cpu().numpy() # [B, V, 3, output_size, output_size]
                         gt_images = gt_images.transpose(0, 3, 1, 4, 2).reshape(-1, gt_images.shape[1] * gt_images.shape[3], 3)    # [B * output_size, V * output_size, 3]
