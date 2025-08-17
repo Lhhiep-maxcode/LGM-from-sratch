@@ -39,13 +39,12 @@ class LGM(nn.Module):
         self.pos_act = lambda x: x.clamp(-1, 1)     # Dense Gaussians
         self.scale_act = lambda x: 0.1 * F.softplus(x)
         self.opacity_act = lambda x: torch.sigmoid(x)
+        # self.opacity_act = lambda x: torch.ones_like(x)
         self.rot_act = lambda x: F.normalize(x, dim=-1)
-        self.rgb_act = lambda x: 0.5 * torch.tanh(x) + 0.5 # NOTE: may use sigmoid if train again
+        self.rgb_act = lambda x: torch.sigmoid(x) # NOTE: may use sigmoid if train again
 
-        # LPIPS loss
-        if self.cfg.lambda_lpips > 0:
-            self.lpips_loss = LPIPS(net='vgg')
-            self.lpips_loss.requires_grad_(False)
+        self.lpips_loss = LPIPS(net='vgg')
+        self.lpips_loss.requires_grad_(False)
 
     def state_dict(self, **kwargs):
         # remove lpips_loss
@@ -112,7 +111,7 @@ class LGM(nn.Module):
         gaussians = torch.cat([pos, opacity, scale, rotation, rgbs], dim=-1)    # [B, N, 14]
         return gaussians
     
-    def forward(self, data):
+    def forward(self, data, lambda_mse=1, lambda_lpips=1):
         # data: output of the dataloader
         # data = {
         #     [C, H, W]
@@ -152,6 +151,7 @@ class LGM(nn.Module):
         rendered_results = self.gs.render(gaussians, data['cam_view'], data['cam_view_proj'], data['cam_pos'], bg_color=bg_color)
         pred_images = rendered_results['image']  # [B, V, C, output_size, output_size]
         pred_alphas = rendered_results['alpha']  # [B, V, 1, output_size, output_size]
+        pred_images = pred_images * pred_alphas + (1 - pred_alphas) * bg_color.view(1, 1, 3, 1, 1)
 
         results['images_pred'] = pred_images
         results['alphas_pred'] = pred_alphas
@@ -161,17 +161,17 @@ class LGM(nn.Module):
 
         gt_images = gt_images * gt_masks + (1 - gt_masks) * bg_color.view(1, 1, 3, 1, 1)
 
-        loss_mse = F.mse_loss(pred_images, gt_images) + F.mse_loss(pred_alphas, gt_masks)
-        loss = loss + loss_mse
+        loss_mse = F.mse_loss(pred_images, gt_images) + self.cfg.lambda_alpha * F.mse_loss(pred_alphas, gt_masks)
+        loss = loss + lambda_mse * loss_mse
 
-        if self.cfg.lambda_lpips > 0:
+        if lambda_lpips > 0:
             loss_lpips = self.lpips_loss(
                 # Rescale value from [0, 1] to [-1, -1] and resize to 256 to save memory cost
                 F.interpolate(gt_images.view(-1, 3, self.cfg.output_size, self.cfg.output_size) * 2 - 1, (256, 256), mode='bilinear', align_corners=False),
                 F.interpolate(pred_images.view(-1, 3, self.cfg.output_size, self.cfg.output_size) * 2 - 1, (256, 256), mode='bilinear', align_corners=False),
             ).mean()
             results['loss_lpips'] = loss_lpips
-            loss = loss + self.cfg.lambda_lpips * loss_lpips
+            loss = loss + lambda_lpips * loss_lpips
 
         results['loss'] = loss
 

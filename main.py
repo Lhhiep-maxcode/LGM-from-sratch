@@ -4,6 +4,8 @@ from accelerate import Accelerator
 from safetensors.torch import load_file
 from core.dataset import ObjaverseDataset as Dataset
 from tqdm.auto import tqdm
+from torch.optim.lr_scheduler import LambdaLR
+
 
 import torch
 import tyro
@@ -27,7 +29,11 @@ def main():
             "splat_size": cfg.splat_size,
             "output_size": cfg.output_size,
             "num_views_used": cfg.num_views_used,
-            "lambda_lpips": cfg.lambda_lpips,           
+            "lambda_lpips_start": cfg.lambda_lpips_start, 
+            "lambda_lpips_end": cfg.lambda_lpips_end,
+            "lambda_mse_start": cfg.lambda_mse_start,
+            "lambda_mse_end": cfg.lambda_mse_end,
+            "lambda_alpha": cfg.lambda_alpha,          
         },
     )
 
@@ -128,8 +134,10 @@ def main():
                 optimizer.zero_grad()
 
                 step_ratio = (epoch + i / len(train_dataloader)) / cfg.num_epochs
+                lambda_lpips = cfg.lambda_lpips_start * (cfg.lambda_lpips_end / cfg.lambda_lpips_start) ** step_ratio
+                lambda_mse = cfg.lambda_mse_start * (cfg.lambda_mse_end / cfg.lambda_mse_start) ** step_ratio
 
-                out = model(data)
+                out = model(data, lambda_mse, lambda_lpips)
                 loss = out['loss']
                 psnr = out['psnr']
 
@@ -157,17 +165,28 @@ def main():
 
                 
                 # save log images
-                if i % 1000 == 0:
-                    run.log({"Learning rate (step)": scheduler.get_last_lr()[0]})
+                if i % 500 == 0:
+                    run.log({
+                        "Learning rate (step)": scheduler.get_last_lr()[0], 
+                        "lambda MSE (step)": lambda_mse, 
+                        "lambda LPIPS (step)": lambda_lpips,
+                    })
                     with torch.no_grad():
                         gt_images = data['images_output'].detach().cpu().numpy() # [B, V, 3, output_size, output_size]
                         gt_images = gt_images.transpose(0, 3, 1, 4, 2).reshape(-1, gt_images.shape[1] * gt_images.shape[3], 3)    # [B * output_size, V * output_size, 3]
                         kiui.write_image(f'{cfg.workspace}/{epoch}_{i}_train_gt_images.jpg', gt_images)
                     
+                        gt_mask = data['masks_output'].detach().cpu().numpy() # [B, V, 3, output_size, output_size]
+                        gt_mask = gt_mask.transpose(0, 3, 1, 4, 2).reshape(-1, gt_mask.shape[1] * gt_mask.shape[3], 1)    # [B * output_size, V * output_size, 3]
+                        kiui.write_image(f'{cfg.workspace}/{epoch}_{i}_train_gt_mask.jpg', gt_mask)
 
                         pred_images = out['images_pred'].detach().cpu().numpy() # [B, V, 3, output_size, output_size]
                         pred_images = pred_images.transpose(0, 3, 1, 4, 2).reshape(-1, pred_images.shape[1] * pred_images.shape[3], 3)  # [B * output_size, V * output_size, 3]
                         kiui.write_image(f'{cfg.workspace}/{epoch}_{i}_train_pred_images.jpg', pred_images)
+
+                        pred_mask = out['alphas_pred'].detach().cpu().numpy() # [B, V, 3, output_size, output_size]
+                        pred_mask = pred_mask.transpose(0, 3, 1, 4, 2).reshape(-1, pred_mask.shape[1] * pred_mask.shape[3], 1)  # [B * output_size, V * output_size, 3]
+                        kiui.write_image(f'{cfg.workspace}/{epoch}_{i}_train_pred_mask.jpg', pred_mask)
 
         if accelerator.is_main_process:
             pbar.close()
@@ -201,7 +220,7 @@ def main():
 
                 if accelerator.is_main_process:
                     pbar2.update(1)
-                    if i % 1000 == 0:
+                    if i % 500 == 0:
                         gt_images = data['images_output'].detach().cpu().numpy()    # [B, V, 3, output_size, output_size]
                         gt_images = gt_images.transpose(0, 3, 1, 4, 2).reshape(-1, gt_images.shape[1] * gt_images.shape[3], 3)
                         kiui.utils.write_image(f'{cfg.workspace}/{epoch}_{i}_eval_gt_images.jpg', gt_images)
@@ -218,7 +237,7 @@ def main():
             if accelerator.is_main_process:
                 total_psnr /= len(test_dataloader)
                 run.log({"Test psnr (Epoch)": total_psnr})
-                accelerator.print(f"[EVAL INFO] Epoch: {epoch + 1} psnr: {psnr:.4f}")
+                accelerator.print(f"[EVAL INFO] Epoch: {epoch + 1} psnr: {total_psnr:.4f}")
 
             if total_psnr > best_psnr_eval:
                 best_psnr_eval = total_psnr
