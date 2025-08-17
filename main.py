@@ -237,7 +237,7 @@ def main():
             if accelerator.is_main_process:
                 total_psnr /= len(test_dataloader)
                 run.log({"Test psnr (Epoch)": total_psnr})
-                accelerator.print(f"[EVAL INFO] Epoch: {epoch + 1} psnr: {psnr:.4f}")
+                accelerator.print(f"[EVAL INFO] Epoch: {epoch + 1} psnr: {total_psnr:.4f}")
 
             if total_psnr > best_psnr_eval:
                 best_psnr_eval = total_psnr
