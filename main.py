@@ -163,6 +163,8 @@ def main():
                     "vr": round((mem_total-mem_free)/1024**3),
                 })
 
+                if i % 100 == 0:
+                    run.log({"Train loss (step)": loss.detach()})
                 
                 # save log images
                 if i % 500 == 0:
