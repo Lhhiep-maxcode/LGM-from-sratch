@@ -52,7 +52,8 @@ class ObjaverseDataset(Dataset):
             '/kaggle/input/10k-objaverse-object/archive_96/2d2c2f9f1c54400187eea823843f8e2e',
             '/kaggle/input/10k-objaverse-object/archive_57/65791b708f5d45dab22fb6be46255854',
             '/kaggle/input/10k-objaverse-object/archive_57/d4f7e28fabb448049530a86c8dae568b',
-            '/kaggle/input/10k-objaverse-object/archive_5/793f1bd80bfb45268832b267d6a31cab'
+            '/kaggle/input/10k-objaverse-object/archive_5/793f1bd80bfb45268832b267d6a31cab',
+            '/kaggle/input/10k-objaverse-object/archive_5/b637b4e3f43d414c96edb6a0c18b0603'
         ]
 
         for sub in self.subfolder:
