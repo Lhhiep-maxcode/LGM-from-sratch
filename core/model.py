@@ -46,6 +46,15 @@ class LGM(nn.Module):
         self.lpips_loss = LPIPS(net='vgg')
         self.lpips_loss.requires_grad_(False)
 
+    def load_state_dict(self, state_dict, strict=True, assign=False):
+        # ignore lpips_loss mismatch
+        missing, unexpected = super().load_state_dict(state_dict, strict=strict, assign=assign)
+        if missing:
+            print(f"[Warning] Ignored missing keys: {missing}")
+        if unexpected:
+            print(f"[Warning] Ignored unexpected keys: {unexpected}")
+        return missing, unexpected
+
     def state_dict(self, **kwargs):
         # remove lpips_loss
         state_dict = super().state_dict(**kwargs)
