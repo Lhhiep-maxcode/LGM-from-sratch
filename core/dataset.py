@@ -115,7 +115,7 @@ class ObjaverseDataset(Dataset):
 
         def find_nonzero_bbox(alpha_channel):
             """Find bounding box (ymin, ymax, xmin, xmax) where alpha > 0."""
-            ys, xs = np.where(alpha_channel > 0)
+            ys, xs = np.where(alpha_channel > 0.000001)
             if len(xs) == 0 or len(ys) == 0:  # Fully transparent
                 return None
             return ys.min(), ys.max(), xs.min(), xs.max()
