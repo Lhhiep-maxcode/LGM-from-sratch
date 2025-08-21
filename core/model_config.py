@@ -59,6 +59,7 @@ class Options:
     # training epochs
     num_epochs: int = 30
     lambda_alpha: float = 1.0
+    lambda_top: float = 1.0     # lambda top_view loss 
     lambda_mse_start: float = 1.0
     lambda_mse_end: float = 1.0
     # lpips loss weight (loss = L_mse + lambda * L_lpips)

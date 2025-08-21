@@ -120,7 +120,7 @@ class LGM(nn.Module):
         gaussians = torch.cat([pos, opacity, scale, rotation, rgbs], dim=-1)    # [B, N, 14]
         return gaussians
     
-    def forward(self, data, lambda_mse=1, lambda_lpips=1):
+    def forward(self, data, lambda_mse=1, lambda_lpips=1, lambda_top=1):
         # data: output of the dataloader
         # data = {
         #     [C, H, W]
@@ -170,17 +170,22 @@ class LGM(nn.Module):
 
         gt_images = gt_images * gt_masks + (1 - gt_masks) * bg_color.view(1, 1, 3, 1, 1)
 
-        loss_mse = F.mse_loss(pred_images, gt_images) + self.cfg.lambda_alpha * F.mse_loss(pred_alphas, gt_masks)
-        loss = loss + lambda_mse * loss_mse
+        loss_mse_all = F.mse_loss(pred_images, gt_images) + self.cfg.lambda_alpha * F.mse_loss(pred_alphas, gt_masks)
+        loss_mse_top = F.mse_loss(pred_images[:, 4], gt_images[:, 4]) + self.cfg.lambda_alpha * F.mse_loss(pred_alphas[:, 4], gt_masks[:, 4])
+        loss = loss + lambda_mse * (loss_mse_all + (lambda_top - 1) * loss_mse_top)
 
         if lambda_lpips > 0:
-            loss_lpips = self.lpips_loss(
+            loss_lpips_all = self.lpips_loss(
                 # Rescale value from [0, 1] to [-1, -1] and resize to 256 to save memory cost
                 F.interpolate(gt_images.view(-1, 3, self.cfg.output_size, self.cfg.output_size) * 2 - 1, (256, 256), mode='bilinear', align_corners=False),
                 F.interpolate(pred_images.view(-1, 3, self.cfg.output_size, self.cfg.output_size) * 2 - 1, (256, 256), mode='bilinear', align_corners=False),
             ).mean()
-            results['loss_lpips'] = loss_lpips
-            loss = loss + lambda_lpips * loss_lpips
+            loss_lpips_top = self.lpips_loss(
+                # Rescale value from [0, 1] to [-1, -1] and resize to 256 to save memory cost
+                F.interpolate(gt_images[:, 4].view(-1, 3, self.cfg.output_size, self.cfg.output_size) * 2 - 1, (256, 256), mode='bilinear', align_corners=False),
+                F.interpolate(pred_images[:, 4].view(-1, 3, self.cfg.output_size, self.cfg.output_size) * 2 - 1, (256, 256), mode='bilinear', align_corners=False),
+            ).mean()
+            loss = loss + lambda_lpips * (loss_lpips_all + (lambda_top - 1) * loss_lpips_top)
 
         results['loss'] = loss
 

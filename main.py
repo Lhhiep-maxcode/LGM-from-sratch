@@ -136,8 +136,9 @@ def main():
                 step_ratio = (epoch + i / len(train_dataloader)) / cfg.num_epochs
                 lambda_lpips = cfg.lambda_lpips_start * (cfg.lambda_lpips_end / cfg.lambda_lpips_start) ** step_ratio
                 lambda_mse = cfg.lambda_mse_start * (cfg.lambda_mse_end / cfg.lambda_mse_start) ** step_ratio
+                lambda_top = cfg.lambda_top
 
-                out = model(data, lambda_mse, lambda_lpips)
+                out = model(data, lambda_mse, lambda_lpips, lambda_top)
                 loss = out['loss']
                 psnr = out['psnr']
 
