@@ -203,10 +203,8 @@ def main():
             accelerator.print(f"[TRAIN INFO] Epoch: {epoch + 1} loss: {total_loss:.6f} psnr: {total_psnr:.4f}")
             run.log({"Train loss (Epoch)": total_loss, "Train psnr (Epoch)": total_psnr})
 
-        # checkpoint
-        if (epoch + 1) % 5 == 0 or epoch == cfg.num_epochs - 1:
-            accelerator.wait_for_everyone()
-            accelerator.save_state(output_dir=f'{cfg.workspace}/lastest')
+        accelerator.wait_for_everyone()
+        accelerator.save_state(output_dir=f'{cfg.workspace}/lastest')
 
         # eval
         with torch.no_grad():
