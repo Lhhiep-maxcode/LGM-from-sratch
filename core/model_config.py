@@ -34,7 +34,8 @@ class Options:
     # number of total views
     num_views_total: int = 25
     # number of (input + test) views
-    num_views_used: int = 9
+    num_views_input: int = 5
+    num_views_output: int = 5
     # camera radius (radius of camera orbitting around object)   ---> CHUA HIEU
     cam_radius: float = 1.5 # to better use [-1, 1]^3 space
     # num workers
@@ -44,10 +45,10 @@ class Options:
     # workspace
     workspace: str = './workspace'
     # wandb
-    wandb_key: str = None
+    wandb_key: Optional[str] = None
     wandb_project_name: str ='LGM-4001'
     wandb_experiment_name: str = 'default'
-    wandb_experiment_id: str = None
+    wandb_experiment_id: Optional[str] = None
     # fine-tuning
     fine_tune: bool = True
     # resume

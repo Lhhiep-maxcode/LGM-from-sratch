@@ -84,7 +84,7 @@ class ObjaverseDataset(Dataset):
                                                    # L3
                                24,]                # L4
         
-        self.test_view_ids = [i for i in range(cfg.num_views_total) if i not in self.input_view_ids]
+        self.test_view_ids = [i for i in range(cfg.num_views_total)]
 
     def __len__(self):
         return len(self.items)
@@ -100,7 +100,7 @@ class ObjaverseDataset(Dataset):
             # │   │   ├── 000.txt
             # │   │   ├── 001.txt
 
-        assert len(self.input_view_ids) <= self.cfg.num_views_used
+        assert len(self.input_view_ids) == self.cfg.num_views_input
 
         item_path = self.items[idx]
         results = {}
@@ -111,7 +111,7 @@ class ObjaverseDataset(Dataset):
         cam_poses = []
         
         view_ids = self.input_view_ids + np.random.permutation(self.test_view_ids).tolist()
-        view_ids = view_ids[:self.cfg.num_views_used]
+        view_ids = view_ids[:(self.cfg.num_views_input + self.cfg.num_views_output)]
 
         def find_nonzero_bbox(alpha_channel):
             """Find bounding box (ymin, ymax, xmin, xmax) where alpha > 0."""
@@ -133,7 +133,8 @@ class ObjaverseDataset(Dataset):
                 alpha = image[:, :, 3]
                 bbox = find_nonzero_bbox(alpha)
                 if bbox is None:
-                    raise Exception(f"Fully transparent image at {item_path}")
+                    print(f"Fully transparent image at {item_path}")
+                    bbox = (1e9, -1, 1e9, -1)
                 
                 ymin, ymax, xmin, xmax = bbox
                 global_ymin = min(global_ymin, ymin)
@@ -181,10 +182,10 @@ class ObjaverseDataset(Dataset):
                   for mask in masks]
 
         view_cnt = len(images)
-        if view_cnt < self.cfg.num_views_used:
+        if view_cnt < (self.cfg.num_views_input + self.cfg.num_views_output):
             print(f'[WARN] dataset {item_path}: not enough valid views, only {view_cnt} views found!')
             # Padding to be enough views
-            n = self.cfg.num_views_used - view_cnt
+            n = (self.cfg.num_views_input + self.cfg.num_views_output) - view_cnt
             images = images + [images[-1]] * n
             masks = masks + [masks[-1]] * n
             cam_poses = cam_poses + [cam_poses[-1]] * n
@@ -224,9 +225,10 @@ class ObjaverseDataset(Dataset):
         results['cam_poses_input'] = cam_poses_input
 
         # resize ground-truth images, still in range [0, 1]
-        results['images_output'] = F.interpolate(images, (self.cfg.output_size, self.cfg.output_size), mode='bilinear', align_corners=False)
-        results['masks_output'] = F.interpolate(masks.unsqueeze(1), (self.cfg.output_size, self.cfg.output_size), mode='bilinear', align_corners=False)
+        results['images_output'] = F.interpolate(images[len(self.input_view_ids):].clone(), (self.cfg.output_size, self.cfg.output_size), mode='bilinear', align_corners=False)
+        results['masks_output'] = F.interpolate(masks[len(self.input_view_ids):].clone().unsqueeze(1), (self.cfg.output_size, self.cfg.output_size), mode='bilinear', align_corners=False)
 
+        cam_poses = cam_poses[len(self.input_view_ids):].clone()
         # opengl to colmap camera for gaussian renderer
         cam_poses[:, :3, 1:3] *= -1 # invert up & forward direction
 
@@ -235,9 +237,9 @@ class ObjaverseDataset(Dataset):
         cam_view_proj = cam_view @ self.projection_matrix     # world-to-clip matrix: [V, 4, 4]
         cam_pos = - cam_poses[:, :3, 3] # [V, 3]
         
-        results['cam_view'] = cam_view
-        results['cam_view_proj'] = cam_view_proj
-        results['cam_pos'] = cam_pos
+        results['cam_view_output'] = cam_view
+        results['cam_view_proj_output'] = cam_view_proj
+        results['cam_pos_output'] = cam_pos
 
         # results = {
         #     [C, H, W]
@@ -245,8 +247,8 @@ class ObjaverseDataset(Dataset):
         #     'cam_poses_input': ...,   
         #     'images_output': ...,     (9x3x512x512)
         #     'masks_output': ...,      (.......)
-        #     'cam_view': ...,          (colmap coordinate)
-        #     'cam_view_proj': ...,     (colmap coordinate)
-        #     'cam_pos': ...,           (colmap coordinate)
+        #     'cam_view_output': ...,          (colmap coordinate)
+        #     'cam_view_proj_output': ...,     (colmap coordinate)
+        #     'cam_pos_output': ...,           (colmap coordinate)
         # }
         return results

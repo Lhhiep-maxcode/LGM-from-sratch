@@ -128,9 +128,9 @@ class LGM(nn.Module):
         #     'cam_poses_input': ...,   
         #     'images_output': ...,     (9x3x512x512)
         #     'masks_output': ...,      (.......)
-        #     'cam_view': ...,          (colmap coordinate)
-        #     'cam_view_proj': ...,     (colmap coordinate)
-        #     'cam_pos': ...,           (colmap coordinate)
+        #     'cam_view_output': ...,          (colmap coordinate)
+        #     'cam_view_proj_output': ...,     (colmap coordinate)
+        #     'cam_pos_output': ...,           (colmap coordinate)
         # }
         # ------------
         # return: results = {
@@ -157,7 +157,7 @@ class LGM(nn.Module):
         bg_color = torch.ones(3, dtype=torch.float32, device=gaussians.device)
 
         # use the other views for rendering and supervision
-        rendered_results = self.gs.render(gaussians, data['cam_view'], data['cam_view_proj'], data['cam_pos'], bg_color=bg_color)
+        rendered_results = self.gs.render(gaussians, data['cam_view_output'], data['cam_view_proj_output'], data['cam_pos_output'], bg_color=bg_color)
         pred_images = rendered_results['image']  # [B, V, C, output_size, output_size]
         pred_alphas = rendered_results['alpha']  # [B, V, 1, output_size, output_size]
         pred_images = pred_images * pred_alphas + (1 - pred_alphas) * bg_color.view(1, 1, 3, 1, 1)
@@ -171,8 +171,8 @@ class LGM(nn.Module):
         gt_images = gt_images * gt_masks + (1 - gt_masks) * bg_color.view(1, 1, 3, 1, 1)
 
         loss_mse_all = F.mse_loss(pred_images, gt_images) + self.cfg.lambda_alpha * F.mse_loss(pred_alphas, gt_masks)
-        loss_mse_top = F.mse_loss(pred_images[:, 4], gt_images[:, 4]) + self.cfg.lambda_alpha * F.mse_loss(pred_alphas[:, 4], gt_masks[:, 4])
-        loss = loss + lambda_mse * (loss_mse_all + (lambda_top - 1) * loss_mse_top)
+        # loss_mse_top = F.mse_loss(pred_images[:, 4], gt_images[:, 4]) + self.cfg.lambda_alpha * F.mse_loss(pred_alphas[:, 4], gt_masks[:, 4])
+        loss = loss + lambda_mse * (loss_mse_all) # + lambda_mse * (lambda_top - 1) * loss_mse_top
 
         if lambda_lpips > 0:
             loss_lpips_all = self.lpips_loss(
@@ -180,12 +180,12 @@ class LGM(nn.Module):
                 F.interpolate(gt_images.view(-1, 3, self.cfg.output_size, self.cfg.output_size) * 2 - 1, (256, 256), mode='bilinear', align_corners=False),
                 F.interpolate(pred_images.view(-1, 3, self.cfg.output_size, self.cfg.output_size) * 2 - 1, (256, 256), mode='bilinear', align_corners=False),
             ).mean()
-            loss_lpips_top = self.lpips_loss(
-                # Rescale value from [0, 1] to [-1, -1] and resize to 256 to save memory cost
-                F.interpolate(gt_images[:, 4].view(-1, 3, self.cfg.output_size, self.cfg.output_size) * 2 - 1, (256, 256), mode='bilinear', align_corners=False),
-                F.interpolate(pred_images[:, 4].view(-1, 3, self.cfg.output_size, self.cfg.output_size) * 2 - 1, (256, 256), mode='bilinear', align_corners=False),
-            ).mean()
-            loss = loss + lambda_lpips * (loss_lpips_all + (lambda_top - 1) * loss_lpips_top)
+            # loss_lpips_top = self.lpips_loss(
+            #     # Rescale value from [0, 1] to [-1, -1] and resize to 256 to save memory cost
+            #     F.interpolate(gt_images[:, 4].view(-1, 3, self.cfg.output_size, self.cfg.output_size) * 2 - 1, (256, 256), mode='bilinear', align_corners=False),
+            #     F.interpolate(pred_images[:, 4].view(-1, 3, self.cfg.output_size, self.cfg.output_size) * 2 - 1, (256, 256), mode='bilinear', align_corners=False),
+            # ).mean()
+            loss = loss + lambda_lpips * (loss_lpips_all) # + lambda_lpips * (lambda_top - 1) * loss_lpips_top
 
         results['loss'] = loss
 
