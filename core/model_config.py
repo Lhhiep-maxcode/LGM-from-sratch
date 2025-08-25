@@ -23,7 +23,7 @@ class Options:
     test_size: float = 0.1
     val_size: float = 0.1
     data_path: str = '/kaggle/input/objaverse-subset'
-    # data mode (only support s3 now)   ---> CHUA HIEU
+    # data mode (only support s3 now)
     data_mode: Literal['s3'] = 's3'
     # Field of view in y direction of the dataset   
     fovy: float = 49.1
@@ -36,7 +36,7 @@ class Options:
     # number of (input + test) views
     num_views_input: int = 5
     num_views_output: int = 5
-    # camera radius (radius of camera orbitting around object)   ---> CHUA HIEU
+    # camera radius (radius of camera orbitting around object)
     cam_radius: float = 1.5 # to better use [-1, 1]^3 space
     # num workers
     num_workers: int = 8

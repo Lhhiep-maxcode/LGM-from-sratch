@@ -223,7 +223,7 @@ def main():
 
                 if accelerator.is_main_process:
                     pbar2.update(1)
-                    if i % 500 == 0:
+                    if i % 100 == 0:
                         gt_images = data['images_output'].detach().cpu().numpy()    # [B, V, 3, output_size, output_size]
                         gt_images = gt_images.transpose(0, 3, 1, 4, 2).reshape(-1, gt_images.shape[1] * gt_images.shape[3], 3)
                         kiui.utils.write_image(f'{cfg.workspace}/{epoch}_{i}_eval_gt_images.jpg', gt_images)
